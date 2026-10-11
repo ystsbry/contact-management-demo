@@ -1,0 +1,1082 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>お問い合わせ管理システム 要件・設計</title>
+<style>
+:root{--bg:#f8fafc;--panel:#ffffff;--text:#1e293b;--muted:#475569;--border:#cbd5e1;--sidebar:#0f172a;--sidebar-text:#e2e8f0;--accent:#2563eb;--accent-bg:#dbeafe;--accent-text:#1e3a8a;--warn-bg:#fef3c7;--warn-text:#92400e;--ok-bg:#dcfce7;--ok-text:#166534;--ng-bg:#fee2e2;--ng-text:#991b1b}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI","Hiragino Sans","Noto Sans JP","Yu Gothic UI",sans-serif;color:var(--text);background:var(--bg);line-height:1.7;font-size:15px}
+.layout{display:flex;min-height:100vh}
+nav{width:270px;flex:none;background:var(--sidebar);color:var(--sidebar-text);position:sticky;top:0;height:100vh;overflow:auto;padding:20px 12px}
+nav .title{font-size:15px;font-weight:700;margin:0 0 4px;padding:0 8px;color:#ffffff}
+nav .sub{font-size:12px;color:#94a3b8;padding:0 8px;margin-bottom:16px}
+nav button{display:block;width:100%;text-align:left;background:none;border:0;color:var(--sidebar-text);padding:8px 10px;border-radius:6px;cursor:pointer;font-size:14px;font-family:inherit;line-height:1.4}
+nav button:hover{background:#1e293b}
+nav button.active{background:var(--accent);color:#ffffff;font-weight:600}
+nav button .n{display:inline-block;width:22px;color:#94a3b8;font-size:12px}
+nav button.active .n{color:#dbeafe}
+main{flex:1;padding:32px 48px 80px;max-width:1150px;min-width:0}
+.page{display:none}.page.active{display:block}
+h1{font-size:26px;margin:0 0 6px}
+.lead{color:var(--muted);margin:0 0 24px}
+h2{font-size:20px;border-bottom:2px solid var(--border);padding-bottom:4px;margin:36px 0 12px}
+h3{font-size:16px;margin:22px 0 8px}
+table{border-collapse:collapse;width:100%;margin:12px 0;font-size:14px;background:var(--panel)}
+th,td{border:1px solid var(--border);padding:6px 10px;vertical-align:top;text-align:left}
+th{background:#e2e8f0;color:#0f172a}
+code{background:#e2e8f0;color:#0f172a;padding:1px 5px;border-radius:4px;font-size:13px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+pre{background:#0f172a;color:#e2e8f0;padding:14px 16px;border-radius:8px;overflow:auto;font-size:13px;line-height:1.5}
+pre code{background:none;color:inherit;padding:0}
+.badge{display:inline-block;padding:1px 9px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.warn{background:var(--warn-bg);color:var(--warn-text)}
+.ok{background:var(--ok-bg);color:var(--ok-text)}
+.info{background:var(--accent-bg);color:var(--accent-text)}
+.ng{background:var(--ng-bg);color:var(--ng-text)}
+details{border:1px solid var(--border);border-radius:8px;padding:8px 14px;margin:12px 0;background:var(--panel)}
+summary{cursor:pointer;font-weight:600;color:#0f172a}
+details[open] summary{margin-bottom:8px}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px 18px;margin:12px 0}
+.card h3{margin-top:0}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin:12px 0}
+.flow{display:flex;flex-direction:column;gap:6px;margin:12px 0}
+.step{display:flex;gap:12px;align-items:flex-start;background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:8px 12px}
+.step .n{flex:none;width:28px;height:28px;border-radius:50%;background:var(--accent);color:#ffffff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;margin-top:2px}
+.step.stop .n{background:#dc2626}
+.chain{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:12px 0}
+.chain .node{background:var(--accent-bg);color:var(--accent-text);border-radius:8px;padding:6px 12px;font-weight:600;font-size:14px}
+.chain .node.alt{background:var(--warn-bg);color:var(--warn-text)}
+.chain .arrow{color:var(--muted);font-weight:700}
+.kv{display:grid;grid-template-columns:max-content 1fr;gap:4px 16px;margin:8px 0;font-size:14px}
+.kv dt{font-weight:600;color:#0f172a}.kv dd{margin:0}
+.partition{border:1px solid var(--border);border-radius:10px;overflow:hidden;margin:12px 0;background:var(--panel);font-size:13px}
+.partition .pk{background:#1e293b;color:#f8fafc;padding:8px 12px;font-weight:700;font-family:ui-monospace,Menlo,Consolas,monospace}
+.partition .row{display:grid;grid-template-columns:250px 1fr;border-top:1px solid var(--border)}
+.partition .row .sk{padding:6px 12px;font-family:ui-monospace,Menlo,Consolas,monospace;background:#f1f5f9;color:#0f172a;border-right:1px solid var(--border)}
+.partition .row .val{padding:6px 12px;color:var(--text)}
+svg{max-width:100%;height:auto;background:var(--panel);border:1px solid var(--border);border-radius:10px;display:block;margin:12px 0}
+.xref{background:none;border:0;color:var(--accent);text-decoration:underline;cursor:pointer;padding:0;font:inherit}
+.note{border-left:4px solid var(--accent);background:var(--accent-bg);color:var(--accent-text);padding:8px 14px;border-radius:0 8px 8px 0;margin:12px 0;font-size:14px}
+.note.warn{border-left-color:#d97706;background:var(--warn-bg);color:var(--warn-text)}
+ul,ol{padding-left:22px}
+li{margin:2px 0}
+@media (max-width:860px){.layout{flex-direction:column}nav{width:100%;height:auto;position:static}main{padding:20px}.partition .row{grid-template-columns:1fr}.partition .row .sk{border-right:0;border-bottom:1px solid var(--border)}}
+</style>
+</head>
+<body>
+<div class="layout">
+<nav>
+  <p class="title">お問い合わせ管理システム</p>
+  <p class="sub">要件・設計 / 2026-10-11</p>
+  <button data-page="tldr" class="active"><span class="n">00</span>TL;DR</button>
+  <button data-page="scope"><span class="n">01</span>前提・スコープ・決定事項</button>
+  <button data-page="requirements"><span class="n">02</span>機能要件（MVP）</button>
+  <button data-page="architecture"><span class="n">03</span>アーキテクチャ</button>
+  <button data-page="data-model"><span class="n">04</span>データモデル（DynamoDB）</button>
+  <button data-page="email"><span class="n">05</span>メール送受信（SES）</button>
+  <button data-page="api"><span class="n">06</span>API 仕様</button>
+  <button data-page="screens"><span class="n">07</span>画面・ステータス・通知</button>
+  <button data-page="security"><span class="n">08</span>セキュリティ・運用・実装計画</button>
+</nav>
+<main>
+
+<!-- ===================== 00 TL;DR ===================== -->
+<section class="page active" id="tldr">
+<h1>TL;DR</h1>
+<p class="lead">お問い合わせ管理システムの要件と設計の要約。詳細は各ページを参照。</p>
+
+<h2>何を作るか</h2>
+<p>別サイト（HP）のフォームから届く問い合わせを受け付け、スタッフが管理画面からメールで返信し、対応状況を管理するシステム。お客様とのやり取りはメールで完結し、お客様からの返信メールはシステムが受信して該当の問い合わせに自動で紐付ける。</p>
+<div class="cards">
+  <div class="card"><h3>受付 API</h3>HP のフォームから呼ばれる公開 API。Go / Lambda。</div>
+  <div class="card"><h3>管理画面</h3>スタッフ向け SPA。React / TypeScript。</div>
+  <div class="card"><h3>メール基盤</h3>SES による送信・受信と、受信メールの紐付け処理。</div>
+</div>
+<p>HP そのものは範囲外。HP 側に必要な実装は <button class="xref" data-page="requirements">機能要件</button> ページの依頼事項にまとめた。</p>
+
+<h2>確定した前提</h2>
+<table>
+<tr><th>論点</th><th>決定</th></tr>
+<tr><td>受付サイト数</td><td>1 つ</td></tr>
+<tr><td>お客様とのやり取り</td><td>メールで完結。照会ページは作らない</td></tr>
+<tr><td>返信メールの取り込み</td><td>システムが受信して自動で紐付ける</td></tr>
+<tr><td>スタッフ通知</td><td>メールのみ</td></tr>
+<tr><td>規模</td><td>月数十件、スタッフ数人</td></tr>
+<tr><td>技術スタック</td><td>React / TypeScript、Go、AWS Lambda + CloudFront、Terraform</td></tr>
+</table>
+
+<h2>構成の要点</h2>
+<div class="chain">
+  <span class="node">HP / スタッフ</span><span class="arrow">→</span>
+  <span class="node">CloudFront + WAF</span><span class="arrow">→</span>
+  <span class="node">S3（SPA） / API Gateway</span><span class="arrow">→</span>
+  <span class="node">Lambda（Go）</span><span class="arrow">→</span>
+  <span class="node">DynamoDB / SES / Cognito</span>
+</div>
+<ul>
+<li>CloudFront の背後に、SPA（S3）と API（API Gateway → Lambda / Go）を同一ドメインで配置する。</li>
+<li>データは DynamoDB の単一テーブルに持つ。Lambda から VPC なしで使え、アイドルコストがない。</li>
+<li>認証は Cognito。API Gateway の JWT オーソライザーでトークンを検証し、ロールは Cognito グループで表す。</li>
+<li>メールは SES。受信は SES の受信ルールで S3 に原本を保存し、Lambda が解析して問い合わせに紐付ける。</li>
+<li>Bot 対策は Cloudflare Turnstile、レート制限は WAF。</li>
+<li>インフラは Terraform で定義する。</li>
+</ul>
+<p>構成図は <button class="xref" data-page="architecture">アーキテクチャ</button> ページ。</p>
+
+<h2>MVP 機能の要点</h2>
+<ul>
+<li><strong>受付 API</strong>: バリデーション、Turnstile 検証、受付番号の発行、自動返信、二重送信防止。</li>
+<li><strong>管理画面</strong>: ダッシュボード、一覧・検索、詳細（タイムライン）、ステータス変更、担当者アサイン、メール返信、内部メモ、同一顧客の履歴。</li>
+<li><strong>メール受信</strong>: 返信先アドレスと件名の受付番号で紐付け。自動応答の除外、重複排除。</li>
+<li><strong>設定</strong>: 問い合わせ種別、ユーザー（Cognito 連携）、メール文面。</li>
+<li><strong>通知</strong>: 新規、担当割当、お客様返信をメールでスタッフへ。</li>
+</ul>
+
+<h2>未決事項 <span class="badge warn">⚠️要確認</span></h2>
+<table>
+<tr><th>項目</th><th>内容</th></tr>
+<tr><td>DB の選択</td><td>DynamoDB を前提にした。RDB を希望する場合は Aurora Serverless v2 + Data API に差し替える</td></tr>
+<tr><td>ドメイン</td><td>送信元、受信用、管理画面のドメイン名。Route 53 でホストするか</td></tr>
+<tr><td>SES 受信リージョン</td><td>東京リージョンは 2023 年 9 月に受信対応と発表されている。エンドポイントは実環境で確認</td></tr>
+<tr><td>SES のスレッドヘッダ</td><td>SES v2 の Simple 形式で In-Reply-To / References が付くかを実送信で確認</td></tr>
+<tr><td>WAF のレート制限</td><td>レートルールの最小閾値と課金を確認</td></tr>
+</table>
+
+<h2>次のステップ</h2>
+<ol>
+<li>未決事項のうち DB とドメインを決める。</li>
+<li>Terraform で基盤（DynamoDB、Cognito、S3 + CloudFront、API Gateway + Lambda）を作る。</li>
+<li><button class="xref" data-page="security">セキュリティ・運用・実装計画</button> ページの実装順序に沿って進める。</li>
+</ol>
+</section>
+
+<!-- ===================== 01 scope ===================== -->
+<section class="page" id="scope">
+<h1>前提・スコープ・決定事項</h1>
+<p class="lead">この設計が立脚している前提と、これまでに決めたことの記録。</p>
+
+<h2>前提</h2>
+<ul>
+<li>お客様は別に存在するホームページ（以下 HP）のフォームから問い合わせる。HP 自体はこのリポジトリの範囲外。</li>
+<li>このリポジトリでは、HP から呼ばれる <strong>受付 API</strong>、社内スタッフが使う <strong>管理画面</strong>、<strong>メール送受信基盤</strong> を実装する。</li>
+<li>受付サイトは 1 つ。マルチテナントは考慮しない。</li>
+<li>お客様とのやり取りは <strong>メールで完結</strong> させる。お客様向けの照会ページやマイページは作らない。</li>
+<li>お客様からの返信メールは <strong>システムが受信し、該当の問い合わせに自動で紐付ける</strong>。</li>
+<li>スタッフへの通知は <strong>メールのみ</strong>。Slack 等の連携は行わない。</li>
+<li>規模は <strong>月数十件、スタッフ数人</strong>。自動割当、レポート、SLA 管理は不要。</li>
+<li>フロントエンドは TypeScript / React、バックエンドは Go、インフラは AWS の Lambda と CloudFront を軸にする。</li>
+</ul>
+
+<h2>スコープの境界</h2>
+<div class="cards">
+  <div class="card"><h3><span class="badge ok">作る</span></h3>受付 API、管理画面 SPA、メール送受信、通知、ユーザー・種別・メール文面の設定、インフラ定義（Terraform）</div>
+  <div class="card"><h3><span class="badge ng">作らない</span></h3>HP 本体とそのフォーム UI、お客様向け照会ページ、Slack 連携、複数サイト対応</div>
+  <div class="card"><h3><span class="badge info">HP 側に依頼</span></h3>Turnstile の埋め込み、受付 API の呼び出し、受付番号とエラーの表示（<button class="xref" data-page="requirements">機能要件</button>）</div>
+</div>
+
+<h2>用語</h2>
+<table>
+<tr><th>用語</th><th>意味</th></tr>
+<tr><td>問い合わせ（Inquiry）</td><td>お客様からの 1 件の相談。受付番号で識別する</td></tr>
+<tr><td>受付番号</td><td><code>INQ-000123</code> 形式の連番。メールの件名と返信先アドレスに埋め込み、返信メールの紐付けに使う</td></tr>
+<tr><td>メッセージ（Message）</td><td>問い合わせに紐付く送受信の 1 通。フォーム送信、スタッフの返信、お客様の返信メールを含む</td></tr>
+<tr><td>内部メモ（Note）</td><td>お客様には見えない、スタッフ向けの記録</td></tr>
+<tr><td>イベント（Event）</td><td>ステータス変更や担当者変更などの操作履歴</td></tr>
+<tr><td>担当者</td><td>問い合わせに割り当てられたスタッフ</td></tr>
+<tr><td>要返信</td><td>お客様の最新メッセージにスタッフがまだ返信していない状態</td></tr>
+</table>
+
+<h2>決定事項の記録</h2>
+<table>
+<tr><th>論点</th><th>決定</th><th>決定日</th></tr>
+<tr><td>お客様からの返信の受け方</td><td>メールで完結。照会ページは作らない</td><td>2026-10-11</td></tr>
+<tr><td>返信メールの取り込み方式</td><td>システムが受信して自動で紐付ける（方式 B）</td><td>2026-10-11</td></tr>
+<tr><td>受付サイト数</td><td>1 つ</td><td>2026-10-11</td></tr>
+<tr><td>スタッフ通知</td><td>メールのみ</td><td>2026-10-11</td></tr>
+<tr><td>規模</td><td>月数十件、スタッフ数人</td><td>2026-10-11</td></tr>
+<tr><td>フロントエンド</td><td>TypeScript / React（SPA）</td><td>2026-10-11</td></tr>
+<tr><td>バックエンド</td><td>Go（AWS Lambda）</td><td>2026-10-11</td></tr>
+<tr><td>インフラ</td><td>AWS。CloudFront と Lambda を軸にする</td><td>2026-10-11</td></tr>
+<tr><td>IaC</td><td>Terraform</td><td>2026-10-11</td></tr>
+<tr><td>メールサービス</td><td>Amazon SES（送信・受信）。設計側の提案</td><td>2026-10-11</td></tr>
+<tr><td>認証</td><td>Amazon Cognito。設計側の提案</td><td>2026-10-11</td></tr>
+<tr><td>DB</td><td>DynamoDB。設計側の提案 <span class="badge warn">⚠️要確認</span>（RDB 希望なら差し替え）</td><td>2026-10-11</td></tr>
+</table>
+
+<h2>MVP に含めないもの（第 2 段階以降）</h2>
+<table>
+<tr><th>機能</th><th>備考</th></tr>
+<tr><td>返信テンプレート</td><td>署名のみ MVP に含む</td></tr>
+<tr><td>添付ファイル</td><td>受信分は原本を S3 に保管するだけ。送信は非対応</td></tr>
+<tr><td>未対応リマインド</td><td>EventBridge Scheduler + Lambda で追加しやすい</td></tr>
+<tr><td>CSV エクスポート</td><td></td></tr>
+<tr><td>監査ログ</td><td>操作のイベント履歴は MVP に含むが、閲覧ログは含まない</td></tr>
+<tr><td>個人情報の保持期間による自動削除</td><td>DynamoDB TTL と S3 ライフサイクルで追加できる</td></tr>
+<tr><td>二要素認証、SSO</td><td>Cognito の MFA 機能で追加できる</td></tr>
+<tr><td>自動割当、レポート、SLA 管理</td><td></td></tr>
+<tr><td>Slack 通知</td><td></td></tr>
+<tr><td>複数サイト対応</td><td></td></tr>
+<tr><td>バウンス・苦情の自動処理</td><td>MVP では SNS からの通知メールで把握する</td></tr>
+</table>
+</section>
+
+<!-- ===================== 02 requirements ===================== -->
+<section class="page" id="requirements">
+<h1>機能要件（MVP）</h1>
+<p class="lead">MVP として実装する機能の一覧。技術的な実現方法は 03 以降のページ。</p>
+
+<h2>1. 受付 API（HP から呼ばれる）</h2>
+<ul>
+<li>氏名、メールアドレス、電話番号（任意）、問い合わせ種別、本文を受け取り保存する。</li>
+<li>入力バリデーションを行い、HP 側が項目ごとにエラー表示できる形式で返す。</li>
+<li>Bot 対策トークン（Cloudflare Turnstile）を検証する。</li>
+<li>IP 単位のレート制限を行う（WAF）。</li>
+<li>CORS で HP のオリジンのみ許可する。</li>
+<li>受付番号を発行し、レスポンスで HP に返す。HP はお客様に受付番号を表示する。</li>
+<li>同じメールアドレスと本文の送信が 5 分以内に重複した場合は、既存の受付番号を返す（二重登録しない）。</li>
+<li>問い合わせ種別の一覧を返す API を提供する（HP のセレクトボックス用）。</li>
+</ul>
+
+<h2>2. メール送受信</h2>
+<h3>送信</h3>
+<ul>
+<li>受付時にお客様へ自動返信メールを送る。件名に受付番号を含め、返信先を受信用アドレスにする。</li>
+<li>スタッフは管理画面からお客様へ返信メールを送れる。送った内容は履歴に残る。</li>
+<li>返信メールは、お客様のメーラーで同じスレッドに並ぶようにヘッダを付与する。</li>
+</ul>
+<h3>受信</h3>
+<ul>
+<li>お客様からの返信メールを SES で受信し、受付番号をもとに該当の問い合わせへ紐付ける。</li>
+<li>紐付け先が見つからないメールは、メール起点の新規問い合わせとして登録する。</li>
+<li>自動応答（不在通知など）、ウイルス検知、スパム判定のメールは取り込まない。</li>
+<li>同じメールを二重に取り込まない。</li>
+<li>お客様からの返信を受信したら、ステータスを戻し、担当者へ通知する。</li>
+<li>受信メールの添付ファイルは MVP では画面に出さない。原本を S3 に保管し、添付があったことだけ記録して画面に表示する。</li>
+</ul>
+
+<h2>3. 管理画面</h2>
+<ul>
+<li>ログイン後のトップに、未対応件数、要返信件数、自分の担当件数、直近の問い合わせを表示する。</li>
+<li>一覧: ステータス、種別、担当者、要返信で絞り込み、受付日時の新しい順に表示、ページング。</li>
+<li>検索: 氏名、メールアドレス、受付番号、本文のキーワード検索。</li>
+<li>詳細: お客様情報、種別、ステータス、担当者、メッセージと内部メモとイベントを時系列に並べたタイムライン。</li>
+<li>詳細からの操作: ステータス変更、担当者アサイン、メール返信、内部メモ追加。</li>
+<li>同じメールアドレスの過去の問い合わせを一覧表示する。</li>
+<li>「要返信」が一覧と詳細で分かる。</li>
+</ul>
+
+<h2>4. 認証・権限・設定</h2>
+<ul>
+<li>メールアドレスとパスワードでログインする（Cognito）。</li>
+<li>初回ログイン時に仮パスワードから本パスワードへ変更する。</li>
+<li>パスワードを忘れた場合、メールで届く確認コードで再設定できる。</li>
+<li>ロールは 管理者 / 担当者 の 2 種類。</li>
+</ul>
+<table>
+<tr><th>ロール</th><th>できること</th></tr>
+<tr><td>管理者</td><td>すべての操作、ユーザー管理、各種設定</td></tr>
+<tr><td>担当者</td><td>問い合わせの閲覧と対応操作</td></tr>
+</table>
+<ul>
+<li>ユーザー管理: 追加（招待メール送信）、ロール変更、無効化、パスワードリセット。</li>
+<li>自分のパスワード変更。</li>
+<li>問い合わせ種別マスタ: 追加、名称変更、表示順、無効化。</li>
+<li>メール設定: 送信元の表示名、自動返信の件名と本文、スタッフ通知先アドレス、署名。</li>
+</ul>
+
+<h2>5. 通知（スタッフ向けメール）</h2>
+<table>
+<tr><th>イベント</th><th>通知先</th></tr>
+<tr><td>新規問い合わせ（フォーム / メール起点）</td><td>設定した通知先アドレス</td></tr>
+<tr><td>担当者アサイン</td><td>担当者本人</td></tr>
+<tr><td>お客様からの返信受信</td><td>担当者本人。未割当なら通知先アドレス</td></tr>
+</table>
+<p>通知メールには受付番号、氏名、種別、本文冒頭、管理画面の詳細 URL を含める。</p>
+
+<h2>6. ステータス</h2>
+<table>
+<tr><th>ステータス</th><th>意味</th></tr>
+<tr><td><span class="badge ng">未対応</span></td><td>誰も着手していない</td></tr>
+<tr><td><span class="badge info">対応中</span></td><td>担当者が付いている、または対応を進めている</td></tr>
+<tr><td><span class="badge warn">返信済み</span></td><td>スタッフが返信し、お客様の反応待ち</td></tr>
+<tr><td><span class="badge ok">完了</span></td><td>対応が終わった</td></tr>
+</table>
+<p>自動遷移: 担当者アサインで 未対応 → 対応中。返信送信で → 返信済み。お客様の返信受信で 返信済み / 完了 → 対応中（担当者あり）または 未対応（担当者なし）。手動変更はどのステータスへも可能。遷移図は <button class="xref" data-page="screens">画面・ステータス・通知</button> ページ。</p>
+
+<h2>7. 非機能要件</h2>
+<ul>
+<li>HTTPS のみ。</li>
+<li>個人情報（氏名、メール、電話、本文）はログインユーザーのみ閲覧できる。アプリケーションログに本文を出力しない。</li>
+<li>性能要件は特になし（月数十件）。</li>
+<li>対応ブラウザは最新の Chrome / Edge / Safari。</li>
+<li>受信処理は冪等にし、SES や Lambda の再試行で重複登録しない。</li>
+<li>インフラはコードで管理し、再構築できる。</li>
+<li>バックアップは DynamoDB のポイントインタイムリカバリを有効にする。</li>
+</ul>
+
+<h2>8. HP 側への依頼事項</h2>
+<div class="note">HP はこのリポジトリの範囲外だが、以下の実装が必要になる。</div>
+<ul>
+<li>Cloudflare Turnstile のウィジェットを埋め込み、取得したトークンを受付 API に渡す。</li>
+<li>受付 API を呼び出し、成功時は受付番号を表示する。</li>
+<li>バリデーションエラー時は、API が返す項目別メッセージを表示する。</li>
+<li>送信ボタンの連打を防ぐ（送信中は無効化）。</li>
+<li>問い合わせ種別は種別 API から取得するか、管理画面で登録した ID を固定で埋め込む。</li>
+</ul>
+</section>
+
+<!-- ===================== 03 architecture ===================== -->
+<section class="page" id="architecture">
+<h1>アーキテクチャ</h1>
+<p class="lead">React / Go / AWS（Lambda + CloudFront）での全体構成。</p>
+
+<h2>技術スタック</h2>
+<table>
+<tr><th>領域</th><th>採用</th><th>補足</th></tr>
+<tr><td>フロントエンド</td><td>React + TypeScript + Vite。React Router、TanStack Query</td><td>S3 + CloudFront で配信する SPA</td></tr>
+<tr><td>バックエンド</td><td>Go（<code>provided.al2023</code>、arm64）。chi ルーター</td><td>API 用 Lambda 1 つと、メール受信用 Lambda 1 つ</td></tr>
+<tr><td>API 公開</td><td>API Gateway（HTTP API）</td><td>JWT オーソライザー、CORS、スロットリングを担う</td></tr>
+<tr><td>DB</td><td>DynamoDB（単一テーブル）</td><td>VPC 不要。アイドルコストなし。<span class="badge warn">⚠️要確認</span>（RDB 希望なら差し替え）</td></tr>
+<tr><td>認証</td><td>Cognito User Pool</td><td>グループ <code>admin</code> / <code>agent</code> でロールを表す</td></tr>
+<tr><td>メール</td><td>Amazon SES</td><td>送信と受信。受信は S3 保存 + Lambda 起動</td></tr>
+<tr><td>Bot 対策</td><td>Cloudflare Turnstile</td><td>無料。reCAPTCHA への差し替えも容易</td></tr>
+<tr><td>配信・保護</td><td>CloudFront + AWS WAF</td><td>SPA と API を同一ドメインで配信。WAF でレート制限</td></tr>
+<tr><td>シークレット</td><td>SSM Parameter Store（SecureString）</td><td>Turnstile シークレットなど</td></tr>
+<tr><td>IaC</td><td>Terraform（HCL）</td><td>環境ごとのルートモジュール + 用途別モジュール。状態は S3 バックエンド</td></tr>
+<tr><td>CI/CD</td><td>GitHub Actions</td><td>OIDC で AWS に認証</td></tr>
+</table>
+<p>Go の Lambda 実装は <code>aws-lambda-go</code> と <code>aws-lambda-go-api-proxy</code>（chi アダプタ）を使い、同じルーターをローカルでは <code>net/http</code> でそのまま起動する。</p>
+
+<h2>AWS 構成図</h2>
+<svg viewBox="0 0 1100 620" xmlns="http://www.w3.org/2000/svg" font-family="system-ui, 'Hiragino Sans', 'Noto Sans JP', sans-serif" font-size="13">
+<defs>
+<marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#475569"/></marker>
+</defs>
+<!-- actors -->
+<rect x="20" y="40" width="170" height="50" rx="8" fill="#fef3c7" stroke="#d97706"/><text x="105" y="70" text-anchor="middle" fill="#78350f" font-weight="600">お客様（HP フォーム）</text>
+<rect x="20" y="130" width="170" height="50" rx="8" fill="#fef3c7" stroke="#d97706"/><text x="105" y="160" text-anchor="middle" fill="#78350f" font-weight="600">スタッフ（ブラウザ）</text>
+<rect x="20" y="450" width="170" height="50" rx="8" fill="#fef3c7" stroke="#d97706"/><text x="105" y="480" text-anchor="middle" fill="#78350f" font-weight="600">お客様（メーラー）</text>
+<!-- cloudfront -->
+<rect x="250" y="60" width="170" height="140" rx="8" fill="#dbeafe" stroke="#2563eb"/>
+<text x="335" y="110" text-anchor="middle" fill="#1e3a8a" font-weight="700">CloudFront</text>
+<text x="335" y="132" text-anchor="middle" fill="#1e3a8a">+ AWS WAF</text>
+<text x="335" y="156" text-anchor="middle" fill="#1e3a8a" font-size="11">/api/* → API Gateway</text>
+<text x="335" y="174" text-anchor="middle" fill="#1e3a8a" font-size="11">/* → S3</text>
+<!-- col3 -->
+<rect x="480" y="40" width="170" height="50" rx="8" fill="#dcfce7" stroke="#16a34a"/><text x="565" y="70" text-anchor="middle" fill="#14532d" font-weight="600">S3（SPA 静的ファイル）</text>
+<rect x="480" y="130" width="170" height="60" rx="8" fill="#dbeafe" stroke="#2563eb"/><text x="565" y="154" text-anchor="middle" fill="#1e3a8a" font-weight="600">API Gateway (HTTP API)</text><text x="565" y="174" text-anchor="middle" fill="#1e3a8a" font-size="11">JWT オーソライザー / CORS</text>
+<rect x="480" y="240" width="170" height="50" rx="8" fill="#dbeafe" stroke="#2563eb"/><text x="565" y="270" text-anchor="middle" fill="#1e3a8a" font-weight="600">Cognito</text>
+<rect x="480" y="450" width="170" height="50" rx="8" fill="#dbeafe" stroke="#2563eb"/><text x="565" y="480" text-anchor="middle" fill="#1e3a8a" font-weight="600">SES（受信ルール）</text>
+<rect x="480" y="540" width="170" height="50" rx="8" fill="#dcfce7" stroke="#16a34a"/><text x="565" y="570" text-anchor="middle" fill="#14532d" font-weight="600">S3（受信メール原本）</text>
+<!-- col4 -->
+<rect x="710" y="130" width="180" height="60" rx="8" fill="#ede9fe" stroke="#7c3aed"/><text x="800" y="154" text-anchor="middle" fill="#4c1d95" font-weight="700">Lambda api（Go）</text><text x="800" y="174" text-anchor="middle" fill="#4c1d95" font-size="11">公開 API・管理 API</text>
+<rect x="710" y="330" width="180" height="50" rx="8" fill="#dbeafe" stroke="#2563eb"/><text x="800" y="360" text-anchor="middle" fill="#1e3a8a" font-weight="600">SES（送信）</text>
+<rect x="710" y="450" width="180" height="60" rx="8" fill="#ede9fe" stroke="#7c3aed"/><text x="800" y="474" text-anchor="middle" fill="#4c1d95" font-weight="700">Lambda inbound（Go）</text><text x="800" y="494" text-anchor="middle" fill="#4c1d95" font-size="11">受信メール解析・紐付け</text>
+<!-- col5 -->
+<rect x="940" y="40" width="140" height="50" rx="8" fill="#f1f5f9" stroke="#64748b"/><text x="1010" y="61" text-anchor="middle" fill="#334155" font-weight="600" font-size="12">Cloudflare Turnstile</text><text x="1010" y="78" text-anchor="middle" fill="#334155" font-size="11">（外部）</text>
+<rect x="940" y="130" width="140" height="50" rx="8" fill="#dbeafe" stroke="#2563eb"/><text x="1010" y="160" text-anchor="middle" fill="#1e3a8a" font-weight="600" font-size="12">SSM Parameter Store</text>
+<rect x="940" y="290" width="140" height="60" rx="8" fill="#dcfce7" stroke="#16a34a"/><text x="1010" y="314" text-anchor="middle" fill="#14532d" font-weight="700">DynamoDB</text><text x="1010" y="334" text-anchor="middle" fill="#14532d" font-size="11">単一テーブル</text>
+<!-- arrows -->
+<g stroke="#475569" stroke-width="1.5" fill="none" marker-end="url(#ar)">
+<path d="M190 65 L250 100"/>
+<path d="M190 155 L250 150"/>
+<path d="M420 100 L480 65"/>
+<path d="M420 150 L480 160"/>
+<path d="M650 160 L710 160"/>
+<path d="M565 190 L565 240" stroke-dasharray="5 4"/>
+<path d="M105 180 L105 265 L480 265"/>
+<path d="M890 175 L940 305"/>
+<path d="M890 140 L940 65"/>
+<path d="M890 160 L940 155"/>
+<path d="M800 190 L800 330"/>
+<path d="M710 355 L105 355 L105 450"/>
+<path d="M190 475 L480 475"/>
+<path d="M565 500 L565 540"/>
+<path d="M650 475 L710 475"/>
+<path d="M710 500 L650 560" stroke-dasharray="5 4"/>
+<path d="M890 470 L940 335"/>
+<path d="M800 450 L800 380"/>
+</g>
+<!-- labels -->
+<g fill="#334155" font-size="11">
+<text x="196" y="52">POST /api/public/*</text>
+<text x="196" y="145">管理画面</text>
+<text x="438" y="78">/*</text>
+<text x="432" y="146">/api/*</text>
+<text x="572" y="222">JWT 検証</text>
+<text x="120" y="258">ログイン / トークン取得</text>
+<text x="845" y="250">読み書き</text>
+<text x="838" y="100">トークン検証</text>
+<text x="806" y="262">自動返信・返信・通知</text>
+<text x="300" y="348">お客様へのメール / スタッフへの通知</text>
+<text x="200" y="468">返信（MX: reply.example.com）</text>
+<text x="572" y="525">原本保存</text>
+<text x="662" y="468">起動</text>
+<text x="658" y="585">原本取得</text>
+<text x="862" y="420">保存</text>
+<text x="806" y="420">スタッフ通知</text>
+</g>
+</svg>
+
+<table>
+<tr><th>コンポーネント</th><th>役割</th></tr>
+<tr><td>CloudFront</td><td>単一ドメインで SPA と API を配信。<code>/api/*</code> を API Gateway へ、それ以外を S3 へ振り分ける。WAF を付ける</td></tr>
+<tr><td>S3（SPA）</td><td>ビルド済み SPA。OAC で CloudFront からのみ読める</td></tr>
+<tr><td>API Gateway（HTTP API）</td><td>ルーティング、CORS、スロットリング、<code>/api/admin/*</code> の JWT オーソライザー</td></tr>
+<tr><td>Lambda api（Go）</td><td>公開 API と管理 API の全ルートを 1 つの関数で処理</td></tr>
+<tr><td>Lambda inbound（Go）</td><td>SES が受信したメールを解析し、問い合わせに紐付ける</td></tr>
+<tr><td>DynamoDB</td><td>すべての業務データ</td></tr>
+<tr><td>Cognito</td><td>スタッフの認証。ユーザー管理 API の呼び出し先</td></tr>
+<tr><td>SES</td><td>送信（自動返信、スタッフ返信、通知）と受信（返信メール）</td></tr>
+<tr><td>S3（受信メール）</td><td>受信メールの原本（MIME）。ライフサイクルで一定期間後に削除 <span class="badge warn">⚠️要確認</span>（期間）</td></tr>
+<tr><td>SSM Parameter Store</td><td>Turnstile シークレットなどの設定値</td></tr>
+<tr><td>WAF</td><td>公開 API へのレート制限</td></tr>
+</table>
+
+<h2>リクエストの流れ</h2>
+<h3>受付（HP から）</h3>
+<div class="flow">
+<div class="step"><span class="n">1</span><div>HP が Turnstile のトークン付きで <code>POST /api/public/inquiries</code> を呼ぶ。</div></div>
+<div class="step"><span class="n">2</span><div>CloudFront → WAF（レート制限）→ API Gateway → Lambda api。</div></div>
+<div class="step"><span class="n">3</span><div>Lambda api が Turnstile を検証し、バリデーションと重複判定をして DynamoDB に保存する。</div></div>
+<div class="step"><span class="n">4</span><div>SES で自動返信をお客様へ、通知をスタッフへ送る。</div></div>
+<div class="step"><span class="n">5</span><div>受付番号を返す。</div></div>
+</div>
+<h3>管理画面</h3>
+<div class="flow">
+<div class="step"><span class="n">1</span><div>スタッフが SPA でログインする。SPA は Cognito とやり取りしてトークンを得る。</div></div>
+<div class="step"><span class="n">2</span><div>SPA は <code>Authorization: Bearer &lt;アクセストークン&gt;</code> を付けて <code>/api/admin/*</code> を呼ぶ。</div></div>
+<div class="step"><span class="n">3</span><div>API Gateway の JWT オーソライザーがトークンを検証する。Lambda api はクレームの <code>cognito:groups</code> でロールを判定する。</div></div>
+</div>
+<h3>メール受信</h3>
+<div class="flow">
+<div class="step"><span class="n">1</span><div>お客様が返信すると、受信ドメインの MX により SES が受け取る。</div></div>
+<div class="step"><span class="n">2</span><div>SES の受信ルールが原本を S3 に保存し、Lambda inbound を非同期で起動する。</div></div>
+<div class="step"><span class="n">3</span><div>Lambda inbound が原本を解析し、紐付けと保存、通知を行う。詳細は <button class="xref" data-page="email">メール送受信</button> ページ。</div></div>
+</div>
+
+<h2>リポジトリ構成</h2>
+<details open><summary>ディレクトリ構成（案）</summary>
+<pre><code>backend/
+  cmd/api/main.go            API 用 Lambda のエントリ（ローカルでは HTTP サーバとして起動）
+  cmd/inbound/main.go        メール受信 Lambda のエントリ
+  internal/handler/public    公開 API ハンドラ
+  internal/handler/admin     管理 API ハンドラ
+  internal/auth              JWT クレームからユーザー・ロールを取り出す
+  internal/store             DynamoDB アクセス（単一テーブル）
+  internal/inquiry           受付番号、ステータス遷移、紐付けなどのドメインロジック
+  internal/mail              SES 送信、テンプレート、MIME 解析、通知
+  internal/turnstile         Turnstile 検証
+frontend/
+  src/pages/                 Login, Dashboard, InquiryList, InquiryDetail, settings/*, Account
+  src/api/                   fetch ラッパーと TanStack Query のフック
+  src/auth/                  Cognito（aws-amplify の Auth）
+infra/
+  envs/dev/                  dev 環境のルートモジュール（backend.tf、main.tf、terraform.tfvars）
+  envs/prod/                 prod 環境のルートモジュール
+  modules/data/              DynamoDB、受信メール S3
+  modules/auth/              Cognito
+  modules/api/               Lambda api、API Gateway
+  modules/mail/              SES ドメイン、受信ルール、Lambda inbound
+  modules/web/               S3、CloudFront、WAF（us-east-1 のプロバイダエイリアス）
+.docs/                       このドキュメント</code></pre>
+</details>
+
+<h2>IaC と CI/CD</h2>
+<ul>
+<li>Terraform（HCL）で定義する。用途別のモジュール（data / auth / api / mail / web）を、環境ごとのルートモジュール（<code>envs/dev</code>、<code>envs/prod</code>）から呼び出す。</li>
+<li>状態ファイルは S3 バックエンドに置き、ロックを有効にする（Terraform 1.10 以降の S3 ネイティブロック、または DynamoDB テーブル）。</li>
+<li>Go の Lambda は Terraform ではビルドしない。Makefile で <code>GOOS=linux GOARCH=arm64 go build -o bootstrap</code> と zip 化を行い、<code>aws_lambda_function</code> の <code>filename</code> と <code>source_code_hash</code> で参照する。</li>
+<li>SPA は Terraform の管理外。CI で <code>vite build</code> → <code>aws s3 sync</code> → CloudFront のキャッシュ無効化を行う。</li>
+<li>CloudFront 用の WAF は us-east-1 に作る必要があるため、web モジュールにプロバイダエイリアスを渡す。</li>
+<li>GitHub Actions。PR では <code>go test</code>、<code>go vet</code>、フロントエンドの型チェックとビルド、<code>terraform fmt -check</code>、<code>terraform validate</code>、<code>terraform plan</code>（結果を PR コメントに出す）。main へのマージで OIDC により AWS ロールを引き受け、下の順でデプロイする。</li>
+<li>環境は <code>dev</code> と <code>prod</code> の 2 つ。ルートモジュールのディレクトリと <code>terraform.tfvars</code> で切り替える。</li>
+</ul>
+<h3>main マージ時のデプロイ順</h3>
+<div class="chain">
+<span class="node">Go ビルド → zip</span><span class="arrow">→</span>
+<span class="node">terraform apply（Lambda 更新を含む）</span><span class="arrow">→</span>
+<span class="node">vite build</span><span class="arrow">→</span>
+<span class="node">aws s3 sync</span><span class="arrow">→</span>
+<span class="node">CloudFront キャッシュ無効化</span>
+</div>
+
+<h2>ローカル開発</h2>
+<table>
+<tr><th>対象</th><th>方法</th></tr>
+<tr><td>バックエンド</td><td><code>go run ./cmd/api</code> で <code>:8080</code> に HTTP サーバとして起動。Lambda アダプタは本番のみ</td></tr>
+<tr><td>DynamoDB</td><td>DynamoDB Local（Docker）。テーブル作成スクリプトを用意する</td></tr>
+<tr><td>フロントエンド</td><td><code>vite dev</code>。<code>/api</code> を <code>:8080</code> にプロキシ</td></tr>
+<tr><td>Cognito</td><td>ローカルエミュレータがないため、<code>dev</code> 環境のユーザープールを使う</td></tr>
+<tr><td>SES 送信</td><td><code>dev</code> 環境の SES（サンドボックス）。検証済みアドレスにのみ送る</td></tr>
+<tr><td>SES 受信</td><td>ローカルでは再現できない。<code>dev</code> 環境にデプロイして確認する。Lambda inbound の単体テストは保存済みの MIME ファイルで行う</td></tr>
+<tr><td>Turnstile</td><td>テスト用サイトキー（常に成功）を使う</td></tr>
+</table>
+
+<h2>設定値・シークレット</h2>
+<details><summary>Lambda api の設定値</summary>
+<table>
+<tr><th>名前</th><th>用途</th><th>保管</th></tr>
+<tr><td><code>TABLE_NAME</code></td><td>DynamoDB テーブル名</td><td>環境変数</td></tr>
+<tr><td><code>APP_URL</code></td><td>管理画面の URL。通知メールのリンクに使う</td><td>環境変数</td></tr>
+<tr><td><code>PUBLIC_SITE_ORIGIN</code></td><td>HP のオリジン。CORS に使う</td><td>環境変数</td></tr>
+<tr><td><code>MAIL_FROM_ADDRESS</code></td><td>送信元アドレス</td><td>環境変数</td></tr>
+<tr><td><code>MAIL_REPLY_DOMAIN</code></td><td>返信先の受信ドメイン</td><td>環境変数</td></tr>
+<tr><td><code>COGNITO_USER_POOL_ID</code></td><td>ユーザー管理 API の呼び出し先</td><td>環境変数</td></tr>
+<tr><td><code>TURNSTILE_SECRET_PARAM</code></td><td>Turnstile シークレットの SSM パラメータ名</td><td>値は SSM SecureString</td></tr>
+<tr><td><code>ORIGIN_VERIFY_PARAM</code></td><td>CloudFront 経由であることを確認する共有シークレットの SSM パラメータ名</td><td>値は SSM SecureString</td></tr>
+</table>
+</details>
+<details><summary>Lambda inbound の設定値</summary>
+<table>
+<tr><th>名前</th><th>用途</th></tr>
+<tr><td><code>TABLE_NAME</code></td><td>DynamoDB テーブル名</td></tr>
+<tr><td><code>INBOUND_BUCKET</code></td><td>受信メール原本のバケット</td></tr>
+<tr><td><code>APP_URL</code>、<code>MAIL_FROM_ADDRESS</code>、<code>MAIL_REPLY_DOMAIN</code></td><td>通知と紐付けに使う</td></tr>
+</table>
+</details>
+<details><summary>フロントエンド（ビルド時）</summary>
+<table>
+<tr><th>名前</th><th>用途</th></tr>
+<tr><td><code>VITE_COGNITO_USER_POOL_ID</code></td><td>Cognito ユーザープール</td></tr>
+<tr><td><code>VITE_COGNITO_CLIENT_ID</code></td><td>Cognito アプリクライアント</td></tr>
+</table>
+<p>API のベース URL は同一オリジンの <code>/api</code> 固定。</p>
+</details>
+
+<h2>DynamoDB を選んだ理由と代替</h2>
+<div class="cards">
+<div class="card"><h3>選んだ理由</h3><ul><li>Lambda から VPC なしで接続でき、NAT ゲートウェイや RDS Proxy が不要。</li><li>月数十件の規模ではほぼ無料枠に収まり、アイドルコストがない。</li><li>必要なアクセスパターンが限られており、単一テーブルで無理なく表せる。</li></ul></div>
+<div class="card"><h3>割り切った点</h3><ul><li>本文のキーワード検索はスキャンで行う。数千件までは問題ないが、増えた場合は OpenSearch などを検討する。</li><li>集計やレポートが必要になった場合は、DynamoDB Streams から集計テーブルや S3 へ流す。</li></ul></div>
+<div class="card"><h3>RDB を希望する場合の代替 <span class="badge warn">⚠️要確認</span></h3><ul><li>Aurora Serverless v2（PostgreSQL）+ RDS Data API。Lambda から HTTPS で接続でき VPC 不要。</li><li>ゼロスケール設定にすると未使用時のコンピュート課金はないが、再開時に十数秒かかる。</li><li>データモデルは <button class="xref" data-page="data-model">データモデル</button> の項目をそのままテーブルに置き換えられる。</li></ul></div>
+</div>
+</section>
+
+<!-- ===================== 04 data model ===================== -->
+<section class="page" id="data-model">
+<h1>データモデル（DynamoDB）</h1>
+<p class="lead">単一テーブル設計。テーブル名は環境ごとに <code>contact-&lt;env&gt;</code>。</p>
+
+<h2>テーブルとインデックス</h2>
+<table>
+<tr><th>名前</th><th>パーティションキー</th><th>ソートキー</th><th>用途</th></tr>
+<tr><td>テーブル本体</td><td><code>PK</code></td><td><code>SK</code></td><td>問い合わせ単位でメッセージ・メモ・イベントをまとめる</td></tr>
+<tr><td><code>GSI1</code></td><td><code>GSI1PK</code></td><td><code>GSI1SK</code></td><td>問い合わせの新しい順一覧</td></tr>
+<tr><td><code>GSI2</code></td><td><code>GSI2PK</code></td><td><code>GSI2SK</code></td><td>同一メールアドレスの履歴</td></tr>
+</table>
+<ul>
+<li>課金モード: オンデマンド。</li>
+<li>ポイントインタイムリカバリ: 有効。</li>
+<li>TTL 属性: <code>ttl</code>（重複排除用の項目にだけ設定）。</li>
+</ul>
+
+<h2>1 件の問い合わせがどう並ぶか</h2>
+<p>問い合わせに属するものはすべて同じパーティションに置く。詳細画面は <code>PK = INQ#000123</code> の Query 1 回で組める。</p>
+<div class="partition">
+<div class="pk">PK = INQ#000123</div>
+<div class="row"><div class="sk">SK = META</div><div class="val">問い合わせ本体。status、担当者、お客様情報、needsReply、各種日時</div></div>
+<div class="row"><div class="sk">SK = MSG#2026-10-11T01:23:45Z#01J…</div><div class="val">フォーム送信（INBOUND / WEB_FORM）</div></div>
+<div class="row"><div class="sk">SK = EVT#2026-10-11T01:23:45Z#01J…</div><div class="val">CREATED</div></div>
+<div class="row"><div class="sk">SK = EVT#2026-10-11T02:00:00Z#01J…</div><div class="val">ASSIGNED（佐藤）</div></div>
+<div class="row"><div class="sk">SK = NOTE#2026-10-11T02:05:00Z#01J…</div><div class="val">内部メモ「在庫を確認中」</div></div>
+<div class="row"><div class="sk">SK = MSG#2026-10-11T03:00:00Z#01J…</div><div class="val">スタッフ返信（OUTBOUND / EMAIL）</div></div>
+<div class="row"><div class="sk">SK = MSG#2026-10-12T09:10:00Z#&lt;sesMessageId&gt;</div><div class="val">お客様の返信（INBOUND / EMAIL、rawS3Key 付き）</div></div>
+</div>
+
+<h2>項目一覧</h2>
+<table>
+<tr><th>項目</th><th>PK</th><th>SK</th><th>GSI1PK / GSI1SK</th><th>GSI2PK / GSI2SK</th><th>主な属性</th></tr>
+<tr><td>問い合わせ</td><td><code>INQ#000123</code></td><td><code>META</code></td><td><code>INQ</code> / <code>&lt;createdAt&gt;#000123</code></td><td><code>CUST#&lt;email&gt;</code> / <code>&lt;createdAt&gt;</code></td><td>receiptNo, status, source, categoryId, customerName, customerEmail, customerPhone, subject, excerpt, assigneeId, needsReply, lastCustomerMessageAt, lastStaffReplyAt, closedAt, createdAt, updatedAt</td></tr>
+<tr><td>メッセージ</td><td><code>INQ#000123</code></td><td><code>MSG#&lt;createdAt&gt;#&lt;id&gt;</code></td><td></td><td></td><td>direction, channel, fromEmail, toEmail, subject, bodyText, messageId, inReplyTo, sesMessageId, rawS3Key, attachmentCount, sentByUserId, createdAt</td></tr>
+<tr><td>内部メモ</td><td><code>INQ#000123</code></td><td><code>NOTE#&lt;createdAt&gt;#&lt;id&gt;</code></td><td></td><td></td><td>userId, body, createdAt</td></tr>
+<tr><td>イベント</td><td><code>INQ#000123</code></td><td><code>EVT#&lt;createdAt&gt;#&lt;id&gt;</code></td><td></td><td></td><td>type, actorUserId, payload, createdAt</td></tr>
+<tr><td>種別</td><td><code>CATEGORY</code></td><td><code>CAT#&lt;id&gt;</code></td><td></td><td></td><td>name, sortOrder, isActive</td></tr>
+<tr><td>ユーザー</td><td><code>USER</code></td><td><code>USER#&lt;cognitoSub&gt;</code></td><td></td><td></td><td>name, email, role, isActive, createdAt</td></tr>
+<tr><td>メール設定</td><td><code>SETTINGS</code></td><td><code>MAIL</code></td><td></td><td></td><td>fromName, autoReplySubject, autoReplyBody, notifyTo, signature</td></tr>
+<tr><td>採番カウンタ</td><td><code>COUNTER</code></td><td><code>RECEIPT</code></td><td></td><td></td><td>value</td></tr>
+<tr><td>Message-ID 索引</td><td><code>MSGID#&lt;messageId&gt;</code></td><td><code>META</code></td><td></td><td></td><td>receiptNo</td></tr>
+<tr><td>受信重複排除</td><td><code>SESMSG#&lt;sesMessageId&gt;</code></td><td><code>META</code></td><td></td><td></td><td>ttl（30 日）</td></tr>
+<tr><td>送信重複排除</td><td><code>SUBMIT#&lt;sha256(email + body)&gt;</code></td><td><code>META</code></td><td></td><td></td><td>receiptNo, ttl（5 分）</td></tr>
+</table>
+
+<details><summary>列挙値</summary>
+<table>
+<tr><th>属性</th><th>値</th></tr>
+<tr><td><code>status</code></td><td><code>OPEN</code>（未対応）, <code>IN_PROGRESS</code>（対応中）, <code>REPLIED</code>（返信済み）, <code>CLOSED</code>（完了）</td></tr>
+<tr><td><code>source</code></td><td><code>WEB_FORM</code>, <code>EMAIL</code></td></tr>
+<tr><td><code>direction</code></td><td><code>INBOUND</code>, <code>OUTBOUND</code></td></tr>
+<tr><td><code>channel</code></td><td><code>WEB_FORM</code>, <code>EMAIL</code></td></tr>
+<tr><td><code>type</code>（イベント）</td><td><code>CREATED</code>, <code>STATUS_CHANGED</code>, <code>ASSIGNED</code>, <code>UNASSIGNED</code>, <code>REPLY_SENT</code>, <code>CUSTOMER_REPLIED</code>, <code>AUTO_REPLY_SENT</code></td></tr>
+<tr><td><code>role</code></td><td><code>ADMIN</code>, <code>AGENT</code></td></tr>
+</table>
+<p><code>&lt;id&gt;</code> は ULID（時刻順にソートできる）。<code>&lt;createdAt&gt;</code> は ISO 8601 の UTC。</p>
+</details>
+
+<h3>設計上のポイント</h3>
+<ul>
+<li>問い合わせの ID は受付番号そのもの（<code>000123</code>）。URL も <code>/inquiries/INQ-000123</code>。</li>
+<li>フォーム送信の本文も最初のメッセージ（<code>INBOUND</code> / <code>WEB_FORM</code>）として保存する。タイムラインが 1 つの Query で組める。</li>
+<li><code>needsReply</code> は「お客様の最新メッセージに未返信」を表す派生フラグ。受信時に <code>true</code>、返信送信時に <code>false</code> にする。一覧の絞り込みとダッシュボードの件数に使う。</li>
+<li><code>excerpt</code> は最初のメッセージの冒頭 200 文字。一覧表示用。</li>
+<li>ユーザーの認証情報は Cognito が持つ。DynamoDB の項目は表示名とロールの写し。</li>
+</ul>
+
+<h2>アクセスパターン</h2>
+<table>
+<tr><th>操作</th><th>方法</th></tr>
+<tr><td>一覧（新しい順）</td><td><code>GSI1</code> を <code>GSI1PK = INQ</code> で Query、降順。ステータス・種別・担当者・要返信は FilterExpression。ページングは <code>LastEvaluatedKey</code></td></tr>
+<tr><td>ダッシュボードの件数</td><td><code>GSI1</code> を <code>Select = COUNT</code> で Query（未対応、要返信、自分の担当の 3 回）</td></tr>
+<tr><td>キーワード検索</td><td>テーブルを Scan し、<code>META</code> 項目の氏名・メール・受付番号・件名・抜粋と、<code>MSG#</code> 項目の本文を <code>contains</code> で絞る。ヒットした受付番号で <code>META</code> をまとめて取得</td></tr>
+<tr><td>詳細</td><td><code>PK = INQ#000123</code> を Query。<code>META</code>、<code>MSG#</code>、<code>NOTE#</code>、<code>EVT#</code> が 1 回で取れる</td></tr>
+<tr><td>同一顧客の履歴</td><td><code>GSI2</code> を <code>GSI2PK = CUST#&lt;email&gt;</code> で Query</td></tr>
+<tr><td>受付番号で取得</td><td><code>GetItem(INQ#000123, META)</code></td></tr>
+<tr><td>In-Reply-To での紐付け</td><td><code>GetItem(MSGID#&lt;messageId&gt;, META)</code></td></tr>
+<tr><td>種別一覧</td><td><code>PK = CATEGORY</code> を Query</td></tr>
+<tr><td>ユーザー一覧</td><td><code>PK = USER</code> を Query</td></tr>
+<tr><td>設定</td><td><code>GetItem(SETTINGS, MAIL)</code></td></tr>
+</table>
+
+<h2>受付番号の採番</h2>
+<p><code>COUNTER / RECEIPT</code> に対して <code>UpdateItem</code> の <code>ADD value :one</code> を <code>ReturnValues = UPDATED_NEW</code> で実行し、返った値を 6 桁ゼロ埋めする。アトミックなので重複しない。</p>
+
+<h2>冪等性・重複排除</h2>
+<table>
+<tr><th>場面</th><th>方法</th></tr>
+<tr><td>フォームの二重送信</td><td><code>SUBMIT#&lt;hash&gt;</code> を <code>attribute_not_exists(PK)</code> 条件で PutItem。失敗したら既存項目の <code>receiptNo</code> を返す</td></tr>
+<tr><td>受信メールの再配信</td><td><code>SESMSG#&lt;sesMessageId&gt;</code> を条件付き PutItem。処理の最後に書き、成功した場合だけ通知を送る</td></tr>
+<tr><td>受信処理の途中失敗と再実行</td><td>メッセージとイベントの SK を SES の <code>messageId</code> から決定的に作り、再実行では同じ項目を上書きする</td></tr>
+</table>
+
+<h2>サイズ制限への対応</h2>
+<ul>
+<li>DynamoDB の項目上限は 400 KB。受信メールの <code>bodyText</code> は 100 KB で切り詰め、HTML は保存しない。原本は S3（<code>rawS3Key</code>）にあるので失われない。</li>
+<li>フォーム本文は 5,000 文字までなので問題ない。</li>
+</ul>
+</section>
+
+<!-- ===================== 05 email ===================== -->
+<section class="page" id="email">
+<h1>メール送受信（SES）</h1>
+<p class="lead">自動返信・スタッフ返信の送信と、お客様からの返信メールの受信・紐付け。</p>
+
+<h2>ドメインとアドレス</h2>
+<table>
+<tr><th>用途</th><th>例</th><th>設定</th></tr>
+<tr><td>送信元（From）</td><td><code>support@example.com</code></td><td>SES で <code>example.com</code> を検証。Easy DKIM、SPF、DMARC を設定</td></tr>
+<tr><td>返信先（Reply-To）</td><td><code>inquiry+INQ-000123@reply.example.com</code></td><td><code>reply.example.com</code> の MX を SES の受信エンドポイントに向ける</td></tr>
+<tr><td>管理画面</td><td><code>https://admin.example.com</code></td><td>CloudFront。通知メール内のリンク先</td></tr>
+</table>
+<div class="note warn"><strong>⚠️要確認</strong>: 実際のドメイン名と、Route 53 でホストするか。</div>
+<div class="note warn"><strong>⚠️要確認</strong>: SES の受信は東京リージョンで利用できると 2023 年 9 月に発表されている。受信エンドポイント（<code>inbound-smtp.ap-northeast-1.amazonaws.com</code>）は実環境で確認する。</div>
+<p>SES は初期状態がサンドボックスのため、本番前に送信制限の解除申請が必要。</p>
+
+<h2>送信</h2>
+<p>SES v2 の <code>SendEmail</code>（Simple 形式）を使う。</p>
+<table>
+<tr><th>項目</th><th>値</th></tr>
+<tr><td>From</td><td><code>{fromName} &lt;support@example.com&gt;</code></td></tr>
+<tr><td>To</td><td>お客様のメールアドレス</td></tr>
+<tr><td>ReplyToAddresses</td><td><code>inquiry+INQ-000123@reply.example.com</code></td></tr>
+<tr><td>Subject</td><td><code>[INQ-000123] {件名}</code></td></tr>
+<tr><td>Headers</td><td><code>In-Reply-To</code> と <code>References</code> に、直近に受信したお客様メッセージの Message-ID（あれば）</td></tr>
+</table>
+<ul>
+<li>SES が返す <code>MessageId</code> を <code>sesMessageId</code> に保存する。実際の <code>Message-ID</code> ヘッダは <code>&lt;MessageId@email.amazonses.com&gt;</code> の形になる <span class="badge warn">⚠️要確認</span>（リージョンにより末尾が異なる可能性があるため実送信で確認）。</li>
+<li>保存した Message-ID は <code>MSGID#</code> 索引にも登録し、お客様の返信の <code>In-Reply-To</code> と照合できるようにする。</li>
+<li><span class="badge warn">⚠️要確認</span> SES v2 の Simple 形式ではカスタムヘッダを指定できるが、<code>In-Reply-To</code> / <code>References</code> が実際に付くかは実送信で確認する。付かない場合は Raw 形式で送る。</li>
+<li>スタッフ返信は本文の末尾に設定の署名を付ける。</li>
+<li>送信後、メッセージ（<code>OUTBOUND</code> / <code>EMAIL</code>）とイベント <code>REPLY_SENT</code> を保存し、ステータスを 返信済み、<code>needsReply</code> を <code>false</code> にする。</li>
+</ul>
+
+<h2>自動返信</h2>
+<ul>
+<li>フォーム受付時に送る。本文は設定値をテンプレートとし、<code>{{name}}</code>、<code>{{receiptNumber}}</code>、<code>{{body}}</code> を置換する。</li>
+<li>Reply-To は受信用アドレスにする。お客様が自動返信に返信しても紐付く。</li>
+<li>メール起点の新規問い合わせには自動返信を送らない（自動応答同士のループを避ける）。</li>
+</ul>
+
+<h2>受信の仕組み</h2>
+<div class="chain">
+<span class="node">お客様が返信</span><span class="arrow">→</span>
+<span class="node">MX: reply.example.com</span><span class="arrow">→</span>
+<span class="node">SES 受信ルール</span><span class="arrow">→</span>
+<span class="node">S3 に原本保存</span><span class="arrow">→</span>
+<span class="node">Lambda inbound を非同期起動</span><span class="arrow">→</span>
+<span class="node">解析・紐付け・通知</span>
+</div>
+<ul>
+<li>受信ルールは S3 アクション（原本を <code>raw/&lt;messageId&gt;</code> に保存）と Lambda アクションの順に実行される。</li>
+<li>Lambda のイベントにはヘッダの要約と、スパム・ウイルス・SPF・DKIM の判定結果が含まれる。本文は S3 から取得する。</li>
+<li>Lambda の非同期起動は失敗時に 2 回再試行される。最終的に失敗したイベントは SQS のデッドレターキューに送り、CloudWatch アラームで気付けるようにする。</li>
+</ul>
+
+<h2>受信 Lambda の処理手順</h2>
+<div class="flow">
+<div class="step stop"><span class="n">1</span><div><code>receipt.virusVerdict</code> または <code>receipt.spamVerdict</code> が <code>FAIL</code> なら記録だけして終了。</div></div>
+<div class="step"><span class="n">2</span><div>S3 から原本を取得し、MIME を解析する（<code>jhillyerd/enmime</code>）。テキスト本文、HTML 本文、ヘッダ、添付件数を得る。</div></div>
+<div class="step stop"><span class="n">3</span><div>自動応答なら終了。判定は <code>Auto-Submitted</code> が <code>no</code> 以外、<code>X-Auto-Response-Suppress</code> あり、<code>Precedence</code> が <code>bulk</code> / <code>auto_reply</code> / <code>junk</code>、または From が自分の送信元アドレス。</div></div>
+<div class="step"><span class="n">4</span><div>紐付け先を決める（下の紐付けルール）。</div></div>
+<div class="step"><span class="n">5</span><div>紐付け先が無ければ、メール起点の新規問い合わせを作る。<code>source = EMAIL</code>、種別なし、件名はメールの件名、氏名は From の表示名（無ければローカル部）。受付番号を採番する。</div></div>
+<div class="step"><span class="n">6</span><div>メッセージ（<code>INBOUND</code> / <code>EMAIL</code>、<code>rawS3Key</code> 付き）を保存する。SK は <code>MSG#&lt;受信日時&gt;#&lt;sesMessageId&gt;</code> で決定的に作る。</div></div>
+<div class="step"><span class="n">7</span><div>問い合わせの <code>lastCustomerMessageAt</code> と <code>needsReply = true</code> を更新し、ステータスが 返信済み / 完了 なら、担当者ありで 対応中、なしで 未対応 に戻す。イベント <code>CUSTOMER_REPLIED</code>（新規なら <code>CREATED</code>）を記録する。</div></div>
+<div class="step"><span class="n">8</span><div>受信メールの Message-ID を <code>MSGID#</code> 索引に登録する。</div></div>
+<div class="step"><span class="n">9</span><div><code>SESMSG#&lt;sesMessageId&gt;</code> を条件付きで書く。成功したら通知メール（担当者、未割当なら通知先）を送る。既に存在していたら通知しない。</div></div>
+<div class="step"><span class="n">10</span><div>途中で失敗したらエラーを返し、Lambda の再試行に任せる。書き込みキーが決定的なので再実行しても二重にならない。</div></div>
+</div>
+
+<h2>紐付けルール</h2>
+<p>次の順で探し、最初に見つかったものを採用する。</p>
+<div class="chain">
+<span class="node">1. 宛先アドレスの <code>inquiry+INQ-xxxxxx@</code></span><span class="arrow">→</span>
+<span class="node">2. 件名の <code>INQ-\d{6}</code></span><span class="arrow">→</span>
+<span class="node">3. In-Reply-To / References を MSGID# 索引で照合</span><span class="arrow">→</span>
+<span class="node alt">4. 見つからなければ新規問い合わせ</span>
+</div>
+<p>受付番号が見つかっても該当の問い合わせが存在しない場合は、新規扱いにする。</p>
+
+<h2>自動応答・ループ・重複</h2>
+<table>
+<tr><th>問題</th><th>対策</th></tr>
+<tr><td>不在通知などの自動応答を取り込む</td><td>ヘッダで判定して破棄</td></tr>
+<tr><td>自動返信と相手の自動応答がループする</td><td>メール起点の新規問い合わせには自動返信を送らない。From が自分のアドレスなら破棄</td></tr>
+<tr><td>SES / Lambda の再試行で二重登録</td><td>決定的なキーと <code>SESMSG#</code> の条件付き書き込み</td></tr>
+<tr><td>スパム</td><td>SES の判定が <code>FAIL</code> なら破棄。受信アドレスは Reply-To としてのみ使い、公開しない</td></tr>
+</table>
+
+<h2>添付ファイル</h2>
+<ul>
+<li>MVP では添付の内容を保存・表示しない。<code>attachmentCount</code> を記録し、画面に「添付 n 件（原本を保管）」と出す。</li>
+<li>原本は S3 にあるので、第 2 段階で添付の取り出しを実装すれば過去分も参照できる。</li>
+<li>原本の保持期間は S3 ライフサイクルで設定する <span class="badge warn">⚠️要確認</span>（期間）。</li>
+</ul>
+
+<h2>バウンス・苦情</h2>
+<p>SES の設定セットでバウンスと苦情のイベントを SNS に送り、通知先アドレスへメール購読する。MVP では自動処理しない。</p>
+</section>
+
+<!-- ===================== 06 api ===================== -->
+<section class="page" id="api">
+<h1>API 仕様</h1>
+<p class="lead">公開 API（HP 向け）と管理 API（SPA 向け）。Go の 1 つのルーターで提供する。</p>
+
+<h2>共通</h2>
+<ul>
+<li>ベースパス: <code>/api</code>。CloudFront が API Gateway へ転送する。</li>
+<li>形式: JSON。日時は ISO 8601（UTC）。</li>
+<li>公開 API（<code>/api/public/*</code>）は認証なし。CORS は HP のオリジンのみ許可。</li>
+<li>管理 API（<code>/api/admin/*</code>）は Cognito のアクセストークンが必要。管理画面と同一オリジンのため CORS 不要。</li>
+<li>Go 側は chi で 1 つのルーターにまとめ、API Gateway のプロキシ統合で受ける。</li>
+</ul>
+
+<h2>認証（Cognito）</h2>
+<div class="chain">
+<span class="node">SPA: signIn（SRP）</span><span class="arrow">→</span>
+<span class="node">Cognito: アクセストークン発行</span><span class="arrow">→</span>
+<span class="node">SPA: Authorization: Bearer</span><span class="arrow">→</span>
+<span class="node">API Gateway: JWT 検証</span><span class="arrow">→</span>
+<span class="node">Lambda: cognito:groups でロール判定</span>
+</div>
+<table>
+<tr><th>項目</th><th>設計</th></tr>
+<tr><td>ユーザープール</td><td>メールアドレスをユーザー名にする。セルフサインアップ無効。管理者が作成</td></tr>
+<tr><td>グループ</td><td><code>admin</code>、<code>agent</code>。トークンの <code>cognito:groups</code> に入る</td></tr>
+<tr><td>アプリクライアント</td><td>シークレットなし（SPA）。SRP 認証とリフレッシュを有効。アクセストークン 1 時間、リフレッシュトークン 30 日</td></tr>
+<tr><td>SPA 側</td><td><code>aws-amplify</code> の Auth で <code>signIn</code>、初回の <code>NEW_PASSWORD_REQUIRED</code> チャレンジ、<code>resetPassword</code>、<code>updatePassword</code> を扱う</td></tr>
+<tr><td>API Gateway</td><td><code>/api/admin/*</code> に JWT オーソライザー。発行者はユーザープール、対象はアプリクライアント ID</td></tr>
+<tr><td>Go 側</td><td><code>requestContext.authorizer.jwt.claims</code> から <code>sub</code> と <code>cognito:groups</code> を読み、管理者限定の操作はハンドラでロールを確認する</td></tr>
+<tr><td>無効化</td><td>Cognito で <code>AdminDisableUser</code>。発行済みアクセストークンは最長 1 時間有効なので、Lambda api でも <code>USER#</code> 項目の <code>isActive</code> を確認する</td></tr>
+</table>
+<details><summary>ユーザー管理操作と Cognito API の対応</summary>
+<table>
+<tr><th>操作</th><th>Cognito API</th><th>DynamoDB</th></tr>
+<tr><td>追加</td><td><code>AdminCreateUser</code>（招待メール送信）+ <code>AdminAddUserToGroup</code></td><td><code>USER#</code> 項目を作成</td></tr>
+<tr><td>ロール変更</td><td>グループの付け替え</td><td><code>role</code> を更新</td></tr>
+<tr><td>無効化 / 再有効化</td><td><code>AdminDisableUser</code> / <code>AdminEnableUser</code></td><td><code>isActive</code> を更新</td></tr>
+<tr><td>パスワードリセット</td><td><code>AdminResetUserPassword</code>（確認コードをメール）</td><td>なし</td></tr>
+<tr><td>自分のパスワード変更</td><td>SPA から直接 <code>ChangePassword</code></td><td>なし</td></tr>
+</table>
+</details>
+
+<h2>公開 API</h2>
+<h3><code>GET /api/public/categories</code></h3>
+<p>有効な種別を表示順で返す。</p>
+<pre><code>200 [{ "id": "01J...", "name": "製品について" }]</code></pre>
+
+<h3><code>POST /api/public/inquiries</code></h3>
+<pre><code>{
+  "name": "山田 太郎",
+  "email": "taro@example.com",
+  "phone": "090-0000-0000",
+  "categoryId": "01J...",
+  "body": "お問い合わせ本文",
+  "turnstileToken": "..."
+}</code></pre>
+<table>
+<tr><th>結果</th><th>ステータス</th><th>ボディ</th></tr>
+<tr><td>成功</td><td>201</td><td><code>{ "receiptNumber": "INQ-000123" }</code></td></tr>
+<tr><td>バリデーションエラー</td><td>400</td><td><code>{ "error": { "code": "validation_error", "fields": { "email": "メールアドレスの形式が正しくありません" } } }</code></td></tr>
+<tr><td>Turnstile 検証失敗</td><td>403</td><td><code>{ "error": { "code": "captcha_failed" } }</code></td></tr>
+<tr><td>レート制限（WAF）</td><td>429</td><td>WAF の既定レスポンス</td></tr>
+</table>
+<details><summary>バリデーション</summary>
+<table>
+<tr><th>項目</th><th>ルール</th></tr>
+<tr><td>name</td><td>必須、100 文字以内</td></tr>
+<tr><td>email</td><td>必須、メール形式、254 文字以内</td></tr>
+<tr><td>phone</td><td>任意、数字とハイフンのみ、20 文字以内</td></tr>
+<tr><td>categoryId</td><td>必須、有効な種別の ID</td></tr>
+<tr><td>body</td><td>必須、5,000 文字以内</td></tr>
+<tr><td>turnstileToken</td><td>必須</td></tr>
+</table>
+</details>
+<p>サーバ側の処理順:</p>
+<div class="chain">
+<span class="node">Turnstile 検証</span><span class="arrow">→</span>
+<span class="node">バリデーション</span><span class="arrow">→</span>
+<span class="node">重複判定（SUBMIT#）</span><span class="arrow">→</span>
+<span class="node">採番</span><span class="arrow">→</span>
+<span class="node">保存</span><span class="arrow">→</span>
+<span class="node">自動返信</span><span class="arrow">→</span>
+<span class="node">スタッフ通知</span><span class="arrow">→</span>
+<span class="node">201</span>
+</div>
+<p>メール送信に失敗しても保存は成功として 201 を返し、失敗はログとイベントに残す。</p>
+
+<h2>管理 API</h2>
+<p>すべて要認証。「管理者」と書いたものは <code>admin</code> グループのみ。</p>
+<table>
+<tr><th>メソッド</th><th>パス</th><th>内容</th></tr>
+<tr><td>GET</td><td><code>/api/admin/me</code></td><td>自分の表示名、メール、ロール</td></tr>
+<tr><td>GET</td><td><code>/api/admin/dashboard</code></td><td>未対応件数、要返信件数、自分の担当件数、直近 10 件</td></tr>
+<tr><td>GET</td><td><code>/api/admin/inquiries</code></td><td>一覧。クエリ: <code>status</code>, <code>categoryId</code>, <code>assigneeId</code>, <code>needsReply</code>, <code>q</code>, <code>cursor</code>, <code>limit</code>（既定 20、最大 100）</td></tr>
+<tr><td>GET</td><td><code>/api/admin/inquiries/{receiptNo}</code></td><td>詳細。問い合わせ、メッセージ、メモ、イベント、同一メールの過去問い合わせ</td></tr>
+<tr><td>PATCH</td><td><code>/api/admin/inquiries/{receiptNo}/status</code></td><td><code>{ "status": "CLOSED" }</code></td></tr>
+<tr><td>PATCH</td><td><code>/api/admin/inquiries/{receiptNo}/assignee</code></td><td><code>{ "assigneeId": "..." }</code>。<code>null</code> で解除</td></tr>
+<tr><td>POST</td><td><code>/api/admin/inquiries/{receiptNo}/replies</code></td><td><code>{ "body": "..." }</code>。メール送信して履歴に保存</td></tr>
+<tr><td>POST</td><td><code>/api/admin/inquiries/{receiptNo}/notes</code></td><td><code>{ "body": "..." }</code></td></tr>
+<tr><td>GET</td><td><code>/api/admin/categories</code></td><td>無効も含めて全件</td></tr>
+<tr><td>POST</td><td><code>/api/admin/categories</code></td><td>管理者。<code>{ "name": "...", "sortOrder": 1 }</code></td></tr>
+<tr><td>PATCH</td><td><code>/api/admin/categories/{id}</code></td><td>管理者。名称、表示順、有効/無効</td></tr>
+<tr><td>GET</td><td><code>/api/admin/users</code></td><td>担当者選択にも使うため全員が呼べる</td></tr>
+<tr><td>POST</td><td><code>/api/admin/users</code></td><td>管理者。<code>{ "name": "...", "email": "...", "role": "AGENT" }</code></td></tr>
+<tr><td>PATCH</td><td><code>/api/admin/users/{id}</code></td><td>管理者。名前、ロール、有効/無効</td></tr>
+<tr><td>POST</td><td><code>/api/admin/users/{id}/reset-password</code></td><td>管理者</td></tr>
+<tr><td>GET</td><td><code>/api/admin/settings/mail</code></td><td>管理者</td></tr>
+<tr><td>PUT</td><td><code>/api/admin/settings/mail</code></td><td>管理者</td></tr>
+</table>
+<details><summary>一覧のレスポンス例</summary>
+<pre><code>{
+  "items": [
+    {
+      "receiptNo": "INQ-000123",
+      "status": "OPEN",
+      "categoryName": "製品について",
+      "customerName": "山田 太郎",
+      "customerEmail": "taro@example.com",
+      "excerpt": "本文の冒頭…",
+      "assignee": { "id": "...", "name": "佐藤" },
+      "needsReply": true,
+      "createdAt": "2026-10-11T01:23:45Z"
+    }
+  ],
+  "nextCursor": "eyJ..."
+}</code></pre>
+</details>
+
+<h2>エラー形式</h2>
+<pre><code>{ "error": { "code": "validation_error", "message": "入力内容を確認してください", "fields": { "body": "必須です" } } }</code></pre>
+<table>
+<tr><th>ステータス</th><th>code</th></tr>
+<tr><td>400</td><td><code>validation_error</code></td></tr>
+<tr><td>401</td><td><code>unauthorized</code>（API Gateway が返す）</td></tr>
+<tr><td>403</td><td><code>forbidden</code>, <code>captcha_failed</code></td></tr>
+<tr><td>404</td><td><code>not_found</code></td></tr>
+<tr><td>409</td><td><code>conflict</code>（同時更新の競合など）</td></tr>
+<tr><td>500</td><td><code>internal_error</code></td></tr>
+</table>
+
+<h2>ページング</h2>
+<p><code>cursor</code> は DynamoDB の <code>LastEvaluatedKey</code> を Base64 にしたもの。クライアントは <code>nextCursor</code> をそのまま次のリクエストに渡す。キーワード検索（<code>q</code>）は Scan のため、同じ方式で続きを取得する。</p>
+</section>
+
+<!-- ===================== 07 screens ===================== -->
+<section class="page" id="screens">
+<h1>画面・ステータス遷移・通知</h1>
+<p class="lead">管理画面（SPA）の画面構成と、ステータスの動き、スタッフ向け通知。</p>
+
+<h2>画面一覧</h2>
+<table>
+<tr><th>パス</th><th>内容</th><th>権限</th></tr>
+<tr><td><code>/login</code></td><td>ログイン。初回の本パスワード設定、パスワード再設定もここから</td><td>誰でも</td></tr>
+<tr><td><code>/</code></td><td>ダッシュボード。未対応件数、要返信件数、自分の担当件数、直近 10 件</td><td>担当者以上</td></tr>
+<tr><td><code>/inquiries</code></td><td>一覧。絞り込み（ステータス、種別、担当者、要返信）、キーワード検索、ページング</td><td>担当者以上</td></tr>
+<tr><td><code>/inquiries/INQ-000123</code></td><td>詳細。お客様情報、ステータス・担当者の変更、タイムライン、返信フォーム、メモフォーム、同一メールの過去問い合わせ</td><td>担当者以上</td></tr>
+<tr><td><code>/settings/categories</code></td><td>種別マスタ</td><td>管理者</td></tr>
+<tr><td><code>/settings/users</code></td><td>ユーザー管理</td><td>管理者</td></tr>
+<tr><td><code>/settings/mail</code></td><td>送信元表示名、自動返信、通知先、署名</td><td>管理者</td></tr>
+<tr><td><code>/account</code></td><td>自分のパスワード変更</td><td>本人</td></tr>
+</table>
+<p>SPA なので CloudFront の 403 / 404 を <code>index.html</code> に書き換えて配信する。管理者限定の画面はサイドバーからロールに応じて出し分け、API 側でも拒否する。</p>
+
+<h2>各画面の要点</h2>
+<div class="cards">
+<div class="card"><h3>ダッシュボード</h3><ul><li>件数カードを 3 つ（未対応、要返信、自分の担当）。クリックで該当の絞り込み付き一覧へ。</li><li>直近 10 件を一覧と同じ行形式で表示。</li></ul></div>
+<div class="card"><h3>一覧</h3><ul><li>行には受付番号、受付日時、氏名、種別、ステータス、担当者、「要返信」バッジ。</li><li>絞り込みは URL のクエリに持ち、ブラウザバックで復元できる。</li><li>ページングは「次へ」のみ（カーソル方式）。</li></ul></div>
+<div class="card"><h3>詳細</h3><ul><li>上部にお客様情報とステータス・担当者のセレクト。変更は即時保存。</li><li>タイムラインは古い順。メッセージは送受信で色を分け、内部メモとイベントは控えめに表示。</li><li>受信メッセージはテキスト本文のみ表示。添付があれば「添付 n 件（原本を保管、MVP では表示しない）」と出す。</li><li>返信フォームは本文のみ。件名は <code>[INQ-000123] Re: {元の件名}</code> で固定。送信前に確認ダイアログ。</li><li>メモフォームは本文のみ。</li><li>同一メールアドレスの過去の問い合わせを下部に一覧。</li></ul></div>
+<div class="card"><h3>設定</h3><ul><li>種別: 名称、表示順、有効/無効の編集。削除はしない（既存の問い合わせが参照するため）。</li><li>ユーザー: 追加すると Cognito から招待メールが届く。無効化、ロール変更、パスワードリセット。</li><li>メール: 送信元表示名、自動返信の件名と本文（プレースホルダの説明付き）、通知先アドレス、署名。</li></ul></div>
+</div>
+
+<h2>ステータス遷移</h2>
+<svg viewBox="0 0 820 240" xmlns="http://www.w3.org/2000/svg" font-family="system-ui, 'Hiragino Sans', 'Noto Sans JP', sans-serif" font-size="13">
+<defs>
+<marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#475569"/></marker>
+</defs>
+<rect x="40" y="60" width="120" height="48" rx="24" fill="#fee2e2" stroke="#dc2626"/><text x="100" y="89" text-anchor="middle" fill="#7f1d1d" font-weight="700">未対応</text>
+<rect x="230" y="60" width="120" height="48" rx="24" fill="#dbeafe" stroke="#2563eb"/><text x="290" y="89" text-anchor="middle" fill="#1e3a8a" font-weight="700">対応中</text>
+<rect x="420" y="60" width="120" height="48" rx="24" fill="#fef3c7" stroke="#d97706"/><text x="480" y="89" text-anchor="middle" fill="#78350f" font-weight="700">返信済み</text>
+<rect x="610" y="60" width="120" height="48" rx="24" fill="#dcfce7" stroke="#16a34a"/><text x="670" y="89" text-anchor="middle" fill="#14532d" font-weight="700">完了</text>
+<g stroke="#475569" stroke-width="1.5" fill="none" marker-end="url(#ar2)">
+<path d="M160 84 L230 84"/>
+<path d="M350 84 L420 84"/>
+<path d="M540 84 L610 84"/>
+<path d="M100 60 C100 12, 480 12, 480 60"/>
+<path d="M480 108 C480 165, 290 165, 290 108"/>
+<path d="M500 108 C500 215, 100 215, 100 108"/>
+</g>
+<g fill="#334155" font-size="11">
+<text x="195" y="76" text-anchor="middle">担当者アサイン</text>
+<text x="385" y="76" text-anchor="middle">返信送信</text>
+<text x="575" y="76" text-anchor="middle">手動で完了</text>
+<text x="290" y="28" text-anchor="middle">返信送信（担当者なしでも）</text>
+<text x="385" y="158" text-anchor="middle">お客様返信（担当者あり）</text>
+<text x="300" y="208" text-anchor="middle">お客様返信（担当者なし）</text>
+</g>
+<text x="410" y="234" text-anchor="middle" fill="#475569" font-size="11">完了 からもお客様返信で 対応中 / 未対応 に戻る。手動変更はどのステータスへも可能。</text>
+</svg>
+<table>
+<tr><th>現在</th><th>きっかけ</th><th>次</th></tr>
+<tr><td>未対応</td><td>担当者アサイン</td><td>対応中</td></tr>
+<tr><td>未対応 / 対応中</td><td>スタッフが返信送信</td><td>返信済み</td></tr>
+<tr><td>返信済み / 完了</td><td>お客様の返信を受信</td><td>対応中（担当者あり）/ 未対応（担当者なし）</td></tr>
+<tr><td>任意</td><td>手動変更</td><td>任意</td></tr>
+</table>
+<ul>
+<li>完了にすると <code>closedAt</code> を記録する。</li>
+<li>手動変更とアサインは、同じ問い合わせを別のスタッフが同時に更新した場合に備えて <code>updatedAt</code> を条件にした条件付き更新を行い、競合したら 409 を返す。</li>
+</ul>
+
+<h2>通知メール</h2>
+<p>送信元は <code>support@example.com</code>、宛先はスタッフ。</p>
+<table>
+<tr><th>イベント</th><th>宛先</th><th>件名</th></tr>
+<tr><td>新規問い合わせ</td><td>通知先アドレス</td><td><code>[新規] INQ-000123 {種別} {氏名}</code></td></tr>
+<tr><td>担当者アサイン</td><td>担当者</td><td><code>[担当] INQ-000123 があなたに割り当てられました</code></td></tr>
+<tr><td>お客様返信</td><td>担当者（未割当なら通知先）</td><td><code>[返信あり] INQ-000123 {氏名}</code></td></tr>
+</table>
+<p>本文には本文冒頭 200 文字と詳細画面 URL（<code>{APP_URL}/inquiries/INQ-000123</code>）を入れる。</p>
+</section>
+
+<!-- ===================== 08 security ===================== -->
+<section class="page" id="security">
+<h1>セキュリティ・運用・実装計画</h1>
+<p class="lead">守るべき境界、権限、監視、コスト、実装の順番、まだ決まっていないこと。</p>
+
+<h2>セキュリティ</h2>
+<table>
+<tr><th>対象</th><th>対策</th></tr>
+<tr><td>公開 API</td><td>Turnstile 検証、WAF のレート制限、API Gateway のスロットリング、リクエストサイズ上限、入力検証。本文は常にテキストとして扱い、画面ではエスケープして表示</td></tr>
+<tr><td>CORS</td><td>API Gateway の CORS 設定で HP のオリジンのみ許可</td></tr>
+<tr><td>CloudFront の迂回</td><td>CloudFront が API Gateway へのリクエストに共有シークレットのヘッダを付け、Lambda api で検証する。直接 API Gateway を叩かれても拒否できる</td></tr>
+<tr><td>管理 API</td><td>API Gateway の JWT オーソライザー。管理者限定の操作はハンドラでも <code>cognito:groups</code> を確認</td></tr>
+<tr><td>認証基盤</td><td>Cognito。パスワードポリシー（8 文字以上、英数記号）、セルフサインアップ無効。MFA は第 2 段階</td></tr>
+<tr><td>SPA の配信</td><td>S3 は非公開、CloudFront の OAC からのみ読める。HTTPS のみ。セキュリティヘッダ（HSTS、X-Content-Type-Options、frame-ancestors）をレスポンスヘッダポリシーで付与</td></tr>
+<tr><td>受信メール</td><td>SES のスパム・ウイルス判定が <code>FAIL</code> なら破棄。HTML 本文は保存も表示もしない</td></tr>
+<tr><td>シークレット</td><td>Turnstile シークレット、共有シークレットは SSM SecureString。コードや環境変数に平文で置かない</td></tr>
+<tr><td>ログ</td><td>本文、メールアドレス、電話番号をログに出さない。CloudWatch Logs の保持期間を設定</td></tr>
+<tr><td>データ保護</td><td>DynamoDB と S3 はデフォルト暗号化。ポイントインタイムリカバリ有効</td></tr>
+</table>
+
+<h2>IAM 権限（最小権限）</h2>
+<table>
+<tr><th>主体</th><th>許可</th></tr>
+<tr><td>Lambda api</td><td>DynamoDB テーブルと GSI の読み書き、<code>ses:SendEmail</code>（送信元アドレスに限定）、<code>ssm:GetParameter</code>（対象パラメータのみ）、Cognito の <code>AdminCreateUser</code> / <code>AdminAddUserToGroup</code> / <code>AdminRemoveUserFromGroup</code> / <code>AdminDisableUser</code> / <code>AdminEnableUser</code> / <code>AdminResetUserPassword</code> / <code>AdminGetUser</code>（対象ユーザープールのみ）</td></tr>
+<tr><td>Lambda inbound</td><td>受信メールバケットの <code>s3:GetObject</code>、DynamoDB テーブルの読み書き、<code>ses:SendEmail</code></td></tr>
+<tr><td>SES（受信ルール）</td><td>受信メールバケットへの <code>s3:PutObject</code>、Lambda inbound の <code>lambda:InvokeFunction</code></td></tr>
+<tr><td>CloudFront</td><td>SPA バケットへの <code>s3:GetObject</code>（OAC）</td></tr>
+<tr><td>GitHub Actions</td><td>デプロイ用ロールを OIDC で引き受け</td></tr>
+</table>
+
+<h2>監視・ログ</h2>
+<table>
+<tr><th>項目</th><th>内容</th></tr>
+<tr><td>Lambda のエラー</td><td>CloudWatch アラーム（エラー数 &gt; 0）→ SNS → 通知先アドレス</td></tr>
+<tr><td>受信処理の失敗</td><td>Lambda inbound の失敗先を SQS デッドレターキューにし、キューの滞留をアラーム</td></tr>
+<tr><td>SES の送信失敗</td><td>バウンス・苦情イベントを SNS で通知先アドレスへ</td></tr>
+<tr><td>API のエラー率</td><td>API Gateway の 5xx をアラーム</td></tr>
+<tr><td>ログ</td><td>構造化ログ（JSON）。リクエスト ID と受付番号を必ず含める</td></tr>
+</table>
+
+<h2>コストの目安</h2>
+<p>月数十件、スタッフ数人の利用では、Lambda、API Gateway、DynamoDB、S3、CloudFront、SES、Cognito はいずれも無料枠内かごく少額に収まる。固定費として意識するのは次の 2 つ。</p>
+<table>
+<tr><th>項目</th><th>備考</th></tr>
+<tr><td>AWS WAF</td><td>Web ACL とルールごとの月額が発生する。レート制限を API Gateway のスロットリングだけで代替すれば省ける <span class="badge warn">⚠️要確認</span></td></tr>
+<tr><td>Route 53</td><td>ホストゾーンの月額</td></tr>
+</table>
+
+<h2>実装順序</h2>
+<div class="flow">
+<div class="step"><span class="n">1</span><div><strong>Terraform で基盤を作る</strong>: DynamoDB、Cognito、S3 + CloudFront、API Gateway + Lambda api の疎通。<br><span class="badge ok">完了の目安</span> <code>GET /api/admin/me</code> が認証付きで返る</div></div>
+<div class="step"><span class="n">2</span><div><strong>Go</strong>: store 層、種別 API、公開の受付 API、Turnstile、採番、重複排除。<br><span class="badge ok">完了の目安</span> HP 相当のフォームから登録でき、受付番号が返る</div></div>
+<div class="step"><span class="n">3</span><div><strong>SES 送信</strong>: 自動返信とスタッフ通知。<br><span class="badge ok">完了の目安</span> 受付時にメールが 2 通届く</div></div>
+<div class="step"><span class="n">4</span><div><strong>SPA</strong>: ログイン（初回パスワード変更、再設定）、レイアウト、一覧、詳細の閲覧。<br><span class="badge ok">完了の目安</span> 登録した問い合わせを画面で見られる</div></div>
+<div class="step"><span class="n">5</span><div><strong>管理 API と画面</strong>: ステータス、担当者、内部メモ、返信送信。<br><span class="badge ok">完了の目安</span> 画面から返信メールを送れる</div></div>
+<div class="step"><span class="n">6</span><div><strong>SES 受信</strong>: 受信ドメイン、受信ルール、Lambda inbound、紐付け、お客様返信の通知。<br><span class="badge ok">完了の目安</span> お客様の返信がタイムラインに載る</div></div>
+<div class="step"><span class="n">7</span><div><strong>設定画面</strong>: 種別、ユーザー（Cognito 連携）、メール設定。<br><span class="badge ok">完了の目安</span> 管理者が運用設定を変えられる</div></div>
+<div class="step"><span class="n">8</span><div><strong>仕上げ</strong>: ダッシュボード、WAF、監視、デッドレターキュー、CI/CD。<br><span class="badge ok">完了の目安</span> 本番運用できる</div></div>
+</div>
+
+<h2>未決事項 <span class="badge warn">⚠️要確認</span></h2>
+<table>
+<tr><th>項目</th><th>内容</th><th>影響</th></tr>
+<tr><td>DB の選択</td><td>DynamoDB を前提にした。RDB を希望する場合は Aurora Serverless v2 + Data API に差し替える</td><td>データモデルと store 層</td></tr>
+<tr><td>ドメイン</td><td>送信元、受信用、管理画面のドメイン名。Route 53 でホストするか</td><td>SES と CloudFront の設定</td></tr>
+<tr><td>SES 受信リージョン</td><td>東京リージョンでの受信エンドポイントを実環境で確認</td><td>受信ドメインの MX</td></tr>
+<tr><td>SES のスレッドヘッダ</td><td>Simple 形式で <code>In-Reply-To</code> / <code>References</code> が付くか。付かなければ Raw 形式</td><td>送信実装</td></tr>
+<tr><td>SES の Message-ID 形式</td><td>返却される <code>MessageId</code> と実際のヘッダ値の対応</td><td><code>MSGID#</code> 索引の照合</td></tr>
+<tr><td>WAF</td><td>レートルールの最小閾値と月額。スロットリングのみで代替するか</td><td>公開 API の保護とコスト</td></tr>
+<tr><td>受信メール原本の保持期間</td><td>S3 ライフサイクルの日数</td><td>個人情報の保持方針</td></tr>
+<tr><td>認証を Cognito にしてよいか</td><td>自前実装（bcrypt + JWT）も可能だが、Cognito の方が実装量が少ない</td><td>認証基盤全体</td></tr>
+</table>
+</section>
+
+</main>
+</div>
+<script>
+(function(){
+  var pages = document.querySelectorAll('.page');
+  var navButtons = document.querySelectorAll('nav button[data-page]');
+  var current = 'tldr';
+  function show(id){
+    current = id;
+    for (var i = 0; i < pages.length; i++) {
+      pages[i].classList.toggle('active', pages[i].id === id);
+    }
+    for (var j = 0; j < navButtons.length; j++) {
+      navButtons[j].classList.toggle('active', navButtons[j].getAttribute('data-page') === id);
+    }
+    window.scrollTo(0, 0);
+  }
+  for (var k = 0; k < navButtons.length; k++) {
+    navButtons[k].addEventListener('click', function(e){ e.preventDefault(); show(this.getAttribute('data-page')); });
+  }
+  var xrefs = document.querySelectorAll('.xref[data-page]');
+  for (var m = 0; m < xrefs.length; m++) {
+    xrefs[m].addEventListener('click', function(e){ e.preventDefault(); show(this.getAttribute('data-page')); });
+  }
+  show(current);
+})();
+</script>
+</body>
+</html>
