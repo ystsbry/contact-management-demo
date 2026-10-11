@@ -32,7 +32,7 @@ HP そのものは範囲外。HP 側に必要な実装は「機能要件」ペ�
 - 認証は Cognito。API Gateway の JWT オーソライザーでトークンを検証し、ロールは Cognito グループで表す。
 - メールは SES。受信は SES の受信ルールで S3 に原本を保存し、Lambda が解析して問い合わせに紐付ける。
 - Bot 対策は Cloudflare Turnstile、レート制限は WAF。
-- インフラは Terraform で定義する。
+- インフラは Terraform で定義し、GitHub Actions から OIDC でデプロイする（アクセスキーは使わない）。
 
 ## MVP 機能の要点
 
@@ -55,5 +55,6 @@ HP そのものは範囲外。HP 側に必要な実装は「機能要件」ペ�
 ## 次のステップ
 
 1. 未決事項のうち DB とドメインを決める。
-2. Terraform で基盤（DynamoDB、Cognito、S3 + CloudFront、API Gateway + Lambda）を作る。
-3. 「セキュリティ・運用・実装計画」ページの実装順序に沿って進める。
+2. `infra/bootstrap` を apply し、GitHub の Environments と variables を設定する（README の初回セットアップ）。
+3. Terraform で基盤（DynamoDB、Cognito、S3 + CloudFront、API Gateway + Lambda）を作る。
+4. 「セキュリティ・運用・実装計画」ページの実装順序に沿って進める。

@@ -82,6 +82,7 @@ frontend/
   src/api/                   fetch ラッパーと TanStack Query のフック
   src/auth/                  Cognito（aws-amplify の Auth）
 infra/
+  bootstrap/                 state バケット、GitHub OIDC プロバイダ、CI 用 IAM ロール。管理者がローカルから一度だけ apply
   envs/dev/                  dev 環境のルートモジュール（backend.tf、main.tf、terraform.tfvars）
   envs/prod/                 prod 環境のルートモジュール
   modules/data/              DynamoDB、受信メール S3
@@ -89,20 +90,67 @@ infra/
   modules/api/               Lambda api、API Gateway
   modules/mail/              SES ドメイン、受信ルール、Lambda inbound
   modules/web/               S3、CloudFront、WAF（us-east-1 のプロバイダエイリアス）
+.github/workflows/           CI/CD（ci-backend、ci-frontend、ci-infra、deploy）
+Makefile                     Lambda のビルド（make lambda-build → dist/{api,inbound}.zip）
 .docs/                       このドキュメント
 ```
 
 ## IaC と CI/CD
 
+### Terraform
+
 - Terraform（HCL）で定義する。用途別のモジュール（data / auth / api / mail / web）を、環境ごとのルートモジュール（`envs/dev`、`envs/prod`）から呼び出す。
-- 状態ファイルは S3 バックエンドに置き、ロックを有効にする（Terraform 1.10 以降の S3 ネイティブロック、または DynamoDB テーブル）。
-- Go の Lambda は Terraform ではビルドしない。Makefile で `GOOS=linux GOARCH=arm64 go build -o bootstrap` と zip 化を行い、`aws_lambda_function` の `filename` と `source_code_hash` で参照する。
+- 状態ファイルは S3 バックエンド（`use_lockfile = true`、Terraform 1.11 以降）に置く。キーは `envs/<env>/terraform.tfstate`。
+- `infra/bootstrap/` は state バケット、GitHub OIDC プロバイダ、CI 用 IAM ロールを作る。管理者がローカルから一度だけ apply する（state は最初ローカル。apply 後にバケットへ移行できる）。
+- Go の Lambda は Terraform ではビルドしない。`make lambda-build` が `dist/api.zip` と `dist/inbound.zip` を作り（arm64、`provided.al2023`、mtime 固定で再現可能）、`aws_lambda_function` の `filename` と `source_code_hash` で参照する。
 - SPA は Terraform の管理外。CI で `vite build` → `aws s3 sync` → CloudFront のキャッシュ無効化を行う。
-- CloudFront 用の WAF は us-east-1 に作る必要があるため、web モジュールにプロバイダエイリアスを渡す。
-- GitHub Actions:
-  - PR: `go test`、`go vet`、フロントエンドの型チェックとビルド、`terraform fmt -check`、`terraform validate`、`terraform plan`（結果を PR コメントに出す）。
-  - main へのマージ: OIDC で AWS ロールを引き受け、Lambda のビルド → `terraform apply` → SPA のビルドと `aws s3 sync` → CloudFront のキャッシュ無効化。
-- 環境は `dev` と `prod` の 2 つ。ルートモジュールのディレクトリと `terraform.tfvars` で切り替える。
+- CloudFront 用の WAF と ACM 証明書は us-east-1 に作る必要があるため、web モジュールにプロバイダエイリアスを渡す。
+- 環境は `dev` と `prod` の 2 つ（同じ AWS アカウントを前提）。ルートモジュールのディレクトリと `terraform.tfvars` で切り替える。
+
+### GitHub Actions のワークフロー
+
+| ワークフロー | きっかけ | 内容 | AWS ロール |
+|---|---|---|---|
+| `ci-backend.yml` | `backend/**` の PR / main push | `go vet`、`go test -race`、`make lambda-build` | なし |
+| `ci-frontend.yml` | `frontend/**` の PR / main push | `npm ci`、lint / typecheck / test（あれば）、build | なし |
+| `ci-infra.yml` | `infra/**`、`backend/**`、`Makefile` の PR | `terraform fmt -check`、validate、`infra/envs/*` ごとの `terraform plan`。結果を環境ごとに PR コメントへ投稿（再実行時は更新） | plan |
+| `deploy.yml` | main push で dev。`workflow_dispatch` で dev / prod | Lambda ビルド → `terraform apply` → output 取得 → SPA ビルド → `aws s3 sync` → CloudFront 無効化 | deploy |
+
+- ディレクトリがまだ無い間は `paths` フィルタで走らない。`backend/go.mod`、`frontend/package-lock.json`、`infra/envs/<env>/` が無い場合は該当手順を飛ばす。
+- `deploy` は同じ環境への実行を `concurrency` で直列にする。prod は main からのみ実行でき、GitHub Environment の required reviewers の承認を待つ。
+- S3 への配置は、ハッシュ付きの `assets/` を長期キャッシュで先に置き（古いものは削除しない）、`index.html` を `no-cache` で最後に置き換える。
+
+### AWS への認証（OIDC）
+
+アクセスキーは使わず、GitHub の OIDC トークンで IAM ロールを引き受ける。bootstrap が 2 つのロールを作る。
+
+| ロール | 引き受けられるジョブ | 権限 |
+|---|---|---|
+| `contact-github-deploy` | Environment `dev` / `prod` を持つジョブ（`sub = repo:<repo>:environment:<env>`） | PowerUserAccess + `contact-*` の IAM ロール・ポリシー操作と PassRole。`contact-github-*` への IAM 操作は明示的に拒否 |
+| `contact-github-plan` | `pull_request` イベントのジョブ（`sub = repo:<repo>:pull_request`） | ReadOnlyAccess + state の読み取り + SSM 経由の `kms:Decrypt`。plan は `-lock=false` |
+
+### GitHub 側の設定値
+
+| 種別 | 名前 | 値 |
+|---|---|---|
+| Repository variable | `AWS_PLAN_ROLE_ARN` | bootstrap の output `plan_role_arn` |
+| Environment variable（dev / prod） | `AWS_DEPLOY_ROLE_ARN` | bootstrap の output `deploy_role_arn` |
+| Secret | なし | AWS は OIDC、アプリのシークレットは SSM に置くため不要 |
+
+Environment `prod` には required reviewers と main のみのデプロイ制限を設定する。
+
+### deploy.yml が期待する Terraform output
+
+各環境のルートモジュールは次を output する。
+
+| output | 用途 |
+|---|---|
+| `spa_bucket_name` | SPA の配置先 |
+| `cloudfront_distribution_id` | キャッシュ無効化 |
+| `cognito_user_pool_id` | SPA ビルド時の `VITE_COGNITO_USER_POOL_ID` |
+| `cognito_client_id` | SPA ビルド時の `VITE_COGNITO_CLIENT_ID` |
+
+初回セットアップの手順（bootstrap の apply、GitHub の設定、SSM パラメータの投入、SES / Route 53 の前提）は README に記載。
 
 ## ローカル開発
 
@@ -128,8 +176,8 @@ Lambda api:
 | `MAIL_FROM_ADDRESS` | 送信元アドレス | 環境変数 |
 | `MAIL_REPLY_DOMAIN` | 返信先の受信ドメイン | 環境変数 |
 | `COGNITO_USER_POOL_ID` | ユーザー管理 API の呼び出し先 | 環境変数 |
-| `TURNSTILE_SECRET_PARAM` | Turnstile シークレットの SSM パラメータ名 | 値は SSM SecureString |
-| `ORIGIN_VERIFY_PARAM` | CloudFront 経由であることを確認する共有シークレットの SSM パラメータ名 | 値は SSM SecureString |
+| `TURNSTILE_SECRET_PARAM` | Turnstile シークレットの SSM パラメータ名（`/contact/<env>/turnstile/secret-key`） | SSM SecureString。Terraform はダミー値で作成し `ignore_changes`、人が `put-parameter --overwrite` で投入 |
+| `ORIGIN_VERIFY_PARAM` | CloudFront 経由であることを確認する共有シークレットの SSM パラメータ名（`/contact/<env>/origin-verify/secret`） | SSM SecureString。Terraform の `random_password` で生成 |
 
 Lambda inbound:
 

@@ -120,7 +120,7 @@ li{margin:2px 0}
 <li>認証は Cognito。API Gateway の JWT オーソライザーでトークンを検証し、ロールは Cognito グループで表す。</li>
 <li>メールは SES。受信は SES の受信ルールで S3 に原本を保存し、Lambda が解析して問い合わせに紐付ける。</li>
 <li>Bot 対策は Cloudflare Turnstile、レート制限は WAF。</li>
-<li>インフラは Terraform で定義する。</li>
+<li>インフラは Terraform で定義し、GitHub Actions から OIDC でデプロイする（アクセスキーは使わない）。</li>
 </ul>
 <p>構成図は <button class="xref" data-page="architecture">アーキテクチャ</button> ページ。</p>
 
@@ -146,6 +146,7 @@ li{margin:2px 0}
 <h2>次のステップ</h2>
 <ol>
 <li>未決事項のうち DB とドメインを決める。</li>
+<li><code>infra/bootstrap</code> を apply し、GitHub の Environments と variables を設定する（README の初回セットアップ）。</li>
 <li>Terraform で基盤（DynamoDB、Cognito、S3 + CloudFront、API Gateway + Lambda）を作る。</li>
 <li><button class="xref" data-page="security">セキュリティ・運用・実装計画</button> ページの実装順序に沿って進める。</li>
 </ol>
@@ -473,6 +474,7 @@ frontend/
   src/api/                   fetch ラッパーと TanStack Query のフック
   src/auth/                  Cognito（aws-amplify の Auth）
 infra/
+  bootstrap/                 state バケット、GitHub OIDC プロバイダ、CI 用 IAM ロール。管理者がローカルから一度だけ apply
   envs/dev/                  dev 環境のルートモジュール（backend.tf、main.tf、terraform.tfvars）
   envs/prod/                 prod 環境のルートモジュール
   modules/data/              DynamoDB、受信メール S3
@@ -480,27 +482,78 @@ infra/
   modules/api/               Lambda api、API Gateway
   modules/mail/              SES ドメイン、受信ルール、Lambda inbound
   modules/web/               S3、CloudFront、WAF（us-east-1 のプロバイダエイリアス）
+.github/workflows/           CI/CD（ci-backend、ci-frontend、ci-infra、deploy）
+Makefile                     Lambda のビルド（make lambda-build → dist/{api,inbound}.zip）
 .docs/                       このドキュメント</code></pre>
 </details>
 
 <h2>IaC と CI/CD</h2>
+<h3>Terraform</h3>
 <ul>
 <li>Terraform（HCL）で定義する。用途別のモジュール（data / auth / api / mail / web）を、環境ごとのルートモジュール（<code>envs/dev</code>、<code>envs/prod</code>）から呼び出す。</li>
-<li>状態ファイルは S3 バックエンドに置き、ロックを有効にする（Terraform 1.10 以降の S3 ネイティブロック、または DynamoDB テーブル）。</li>
-<li>Go の Lambda は Terraform ではビルドしない。Makefile で <code>GOOS=linux GOARCH=arm64 go build -o bootstrap</code> と zip 化を行い、<code>aws_lambda_function</code> の <code>filename</code> と <code>source_code_hash</code> で参照する。</li>
+<li>状態ファイルは S3 バックエンド（<code>use_lockfile = true</code>、Terraform 1.11 以降）に置く。キーは <code>envs/&lt;env&gt;/terraform.tfstate</code>。</li>
+<li><code>infra/bootstrap/</code> は state バケット、GitHub OIDC プロバイダ、CI 用 IAM ロールを作る。管理者がローカルから一度だけ apply する（state は最初ローカル。apply 後にバケットへ移行できる）。</li>
+<li>Go の Lambda は Terraform ではビルドしない。<code>make lambda-build</code> が <code>dist/api.zip</code> と <code>dist/inbound.zip</code> を作り（arm64、<code>provided.al2023</code>、mtime 固定で再現可能）、<code>aws_lambda_function</code> の <code>filename</code> と <code>source_code_hash</code> で参照する。</li>
 <li>SPA は Terraform の管理外。CI で <code>vite build</code> → <code>aws s3 sync</code> → CloudFront のキャッシュ無効化を行う。</li>
-<li>CloudFront 用の WAF は us-east-1 に作る必要があるため、web モジュールにプロバイダエイリアスを渡す。</li>
-<li>GitHub Actions。PR では <code>go test</code>、<code>go vet</code>、フロントエンドの型チェックとビルド、<code>terraform fmt -check</code>、<code>terraform validate</code>、<code>terraform plan</code>（結果を PR コメントに出す）。main へのマージで OIDC により AWS ロールを引き受け、下の順でデプロイする。</li>
-<li>環境は <code>dev</code> と <code>prod</code> の 2 つ。ルートモジュールのディレクトリと <code>terraform.tfvars</code> で切り替える。</li>
+<li>CloudFront 用の WAF と ACM 証明書は us-east-1 に作る必要があるため、web モジュールにプロバイダエイリアスを渡す。</li>
+<li>環境は <code>dev</code> と <code>prod</code> の 2 つ（同じ AWS アカウントを前提）。ルートモジュールのディレクトリと <code>terraform.tfvars</code> で切り替える。</li>
+</ul>
+
+<h3>GitHub Actions のワークフロー</h3>
+<table>
+<tr><th>ワークフロー</th><th>きっかけ</th><th>内容</th><th>AWS ロール</th></tr>
+<tr><td><code>ci-backend.yml</code></td><td><code>backend/**</code> の PR / main push</td><td><code>go vet</code>、<code>go test -race</code>、<code>make lambda-build</code></td><td>なし</td></tr>
+<tr><td><code>ci-frontend.yml</code></td><td><code>frontend/**</code> の PR / main push</td><td><code>npm ci</code>、lint / typecheck / test（あれば）、build</td><td>なし</td></tr>
+<tr><td><code>ci-infra.yml</code></td><td><code>infra/**</code>、<code>backend/**</code>、<code>Makefile</code> の PR</td><td><code>terraform fmt -check</code>、validate、<code>infra/envs/*</code> ごとの <code>terraform plan</code>。結果を環境ごとに PR コメントへ投稿（再実行時は更新）</td><td>plan</td></tr>
+<tr><td><code>deploy.yml</code></td><td>main push で dev。<code>workflow_dispatch</code> で dev / prod</td><td>Lambda ビルド → <code>terraform apply</code> → output 取得 → SPA ビルド → <code>aws s3 sync</code> → CloudFront 無効化</td><td>deploy</td></tr>
+</table>
+<ul>
+<li>ディレクトリがまだ無い間は <code>paths</code> フィルタで走らない。<code>backend/go.mod</code>、<code>frontend/package-lock.json</code>、<code>infra/envs/&lt;env&gt;/</code> が無い場合は該当手順を飛ばす。</li>
+<li><code>deploy</code> は同じ環境への実行を <code>concurrency</code> で直列にする。prod は main からのみ実行でき、GitHub Environment の required reviewers の承認を待つ。</li>
+<li>S3 への配置は、ハッシュ付きの <code>assets/</code> を長期キャッシュで先に置き（古いものは削除しない）、<code>index.html</code> を <code>no-cache</code> で最後に置き換える。</li>
 </ul>
 <h3>main マージ時のデプロイ順</h3>
 <div class="chain">
 <span class="node">Go ビルド → zip</span><span class="arrow">→</span>
 <span class="node">terraform apply（Lambda 更新を含む）</span><span class="arrow">→</span>
+<span class="node">terraform output</span><span class="arrow">→</span>
 <span class="node">vite build</span><span class="arrow">→</span>
 <span class="node">aws s3 sync</span><span class="arrow">→</span>
 <span class="node">CloudFront キャッシュ無効化</span>
 </div>
+
+<h3>AWS への認証（OIDC）</h3>
+<p>アクセスキーは使わず、GitHub の OIDC トークンで IAM ロールを引き受ける。bootstrap が 2 つのロールを作る。</p>
+<div class="chain">
+<span class="node">GitHub Actions ジョブ</span><span class="arrow">→</span>
+<span class="node">OIDC トークン（sub にリポジトリと Environment / pull_request）</span><span class="arrow">→</span>
+<span class="node">sts:AssumeRoleWithWebIdentity</span><span class="arrow">→</span>
+<span class="node">contact-github-deploy / contact-github-plan</span>
+</div>
+<table>
+<tr><th>ロール</th><th>引き受けられるジョブ</th><th>権限</th></tr>
+<tr><td><code>contact-github-deploy</code></td><td>Environment <code>dev</code> / <code>prod</code> を持つジョブ（<code>sub = repo:&lt;repo&gt;:environment:&lt;env&gt;</code>）</td><td>PowerUserAccess + <code>contact-*</code> の IAM ロール・ポリシー操作と PassRole。<code>contact-github-*</code> への IAM 操作は明示的に拒否</td></tr>
+<tr><td><code>contact-github-plan</code></td><td><code>pull_request</code> イベントのジョブ（<code>sub = repo:&lt;repo&gt;:pull_request</code>）</td><td>ReadOnlyAccess + state の読み取り + SSM 経由の <code>kms:Decrypt</code>。plan は <code>-lock=false</code></td></tr>
+</table>
+
+<h3>GitHub 側の設定値</h3>
+<table>
+<tr><th>種別</th><th>名前</th><th>値</th></tr>
+<tr><td>Repository variable</td><td><code>AWS_PLAN_ROLE_ARN</code></td><td>bootstrap の output <code>plan_role_arn</code></td></tr>
+<tr><td>Environment variable（dev / prod）</td><td><code>AWS_DEPLOY_ROLE_ARN</code></td><td>bootstrap の output <code>deploy_role_arn</code></td></tr>
+<tr><td>Secret</td><td>なし</td><td>AWS は OIDC、アプリのシークレットは SSM に置くため不要</td></tr>
+</table>
+<p>Environment <code>prod</code> には required reviewers と main のみのデプロイ制限を設定する。</p>
+
+<h3>deploy.yml が期待する Terraform output</h3>
+<table>
+<tr><th>output</th><th>用途</th></tr>
+<tr><td><code>spa_bucket_name</code></td><td>SPA の配置先</td></tr>
+<tr><td><code>cloudfront_distribution_id</code></td><td>キャッシュ無効化</td></tr>
+<tr><td><code>cognito_user_pool_id</code></td><td>SPA ビルド時の <code>VITE_COGNITO_USER_POOL_ID</code></td></tr>
+<tr><td><code>cognito_client_id</code></td><td>SPA ビルド時の <code>VITE_COGNITO_CLIENT_ID</code></td></tr>
+</table>
+<p>初回セットアップの手順（bootstrap の apply、GitHub の設定、SSM パラメータの投入、SES / Route 53 の前提）は README に記載。</p>
 
 <h2>ローカル開発</h2>
 <table>
@@ -524,8 +577,8 @@ infra/
 <tr><td><code>MAIL_FROM_ADDRESS</code></td><td>送信元アドレス</td><td>環境変数</td></tr>
 <tr><td><code>MAIL_REPLY_DOMAIN</code></td><td>返信先の受信ドメイン</td><td>環境変数</td></tr>
 <tr><td><code>COGNITO_USER_POOL_ID</code></td><td>ユーザー管理 API の呼び出し先</td><td>環境変数</td></tr>
-<tr><td><code>TURNSTILE_SECRET_PARAM</code></td><td>Turnstile シークレットの SSM パラメータ名</td><td>値は SSM SecureString</td></tr>
-<tr><td><code>ORIGIN_VERIFY_PARAM</code></td><td>CloudFront 経由であることを確認する共有シークレットの SSM パラメータ名</td><td>値は SSM SecureString</td></tr>
+<tr><td><code>TURNSTILE_SECRET_PARAM</code></td><td>Turnstile シークレットの SSM パラメータ名（<code>/contact/&lt;env&gt;/turnstile/secret-key</code>）</td><td>SSM SecureString。Terraform はダミー値で作成し <code>ignore_changes</code>、人が <code>put-parameter --overwrite</code> で投入</td></tr>
+<tr><td><code>ORIGIN_VERIFY_PARAM</code></td><td>CloudFront 経由であることを確認する共有シークレットの SSM パラメータ名（<code>/contact/&lt;env&gt;/origin-verify/secret</code>）</td><td>SSM SecureString。Terraform の <code>random_password</code> で生成</td></tr>
 </table>
 </details>
 <details><summary>Lambda inbound の設定値</summary>
@@ -1004,7 +1057,8 @@ infra/
 <tr><td>Lambda inbound</td><td>受信メールバケットの <code>s3:GetObject</code>、DynamoDB テーブルの読み書き、<code>ses:SendEmail</code></td></tr>
 <tr><td>SES（受信ルール）</td><td>受信メールバケットへの <code>s3:PutObject</code>、Lambda inbound の <code>lambda:InvokeFunction</code></td></tr>
 <tr><td>CloudFront</td><td>SPA バケットへの <code>s3:GetObject</code>（OAC）</td></tr>
-<tr><td>GitHub Actions</td><td>デプロイ用ロールを OIDC で引き受け</td></tr>
+<tr><td>GitHub Actions（deploy ロール）</td><td>Environment dev / prod のジョブが OIDC で引き受け。PowerUserAccess + <code>contact-*</code> の IAM ロール・ポリシー操作と PassRole（<code>contact-github-*</code> は拒否）</td></tr>
+<tr><td>GitHub Actions（plan ロール）</td><td>pull_request のジョブが OIDC で引き受け。ReadOnlyAccess + state の読み取り + SSM 経由の <code>kms:Decrypt</code></td></tr>
 </table>
 
 <h2>監視・ログ</h2>
@@ -1027,6 +1081,7 @@ infra/
 
 <h2>実装順序</h2>
 <div class="flow">
+<div class="step"><span class="n">0</span><div><strong>bootstrap と CI/CD の雛形</strong>（済み）: state バケット、OIDC ロール、ワークフロー 4 本、Makefile。<br><span class="badge ok">完了の目安</span> PR で plan、main で dev へのデプロイが走る</div></div>
 <div class="step"><span class="n">1</span><div><strong>Terraform で基盤を作る</strong>: DynamoDB、Cognito、S3 + CloudFront、API Gateway + Lambda api の疎通。<br><span class="badge ok">完了の目安</span> <code>GET /api/admin/me</code> が認証付きで返る</div></div>
 <div class="step"><span class="n">2</span><div><strong>Go</strong>: store 層、種別 API、公開の受付 API、Turnstile、採番、重複排除。<br><span class="badge ok">完了の目安</span> HP 相当のフォームから登録でき、受付番号が返る</div></div>
 <div class="step"><span class="n">3</span><div><strong>SES 送信</strong>: 自動返信とスタッフ通知。<br><span class="badge ok">完了の目安</span> 受付時にメールが 2 通届く</div></div>
@@ -1048,6 +1103,11 @@ infra/
 <tr><td>WAF</td><td>レートルールの最小閾値と月額。スロットリングのみで代替するか</td><td>公開 API の保護とコスト</td></tr>
 <tr><td>受信メール原本の保持期間</td><td>S3 ライフサイクルの日数</td><td>個人情報の保持方針</td></tr>
 <tr><td>認証を Cognito にしてよいか</td><td>自前実装（bcrypt + JWT）も可能だが、Cognito の方が実装量が少ない</td><td>認証基盤全体</td></tr>
+<tr><td>deploy ロールの権限</td><td>PowerUserAccess + <code>contact-*</code> の IAM 操作で実質管理者に近い。Permissions Boundary の導入を検討</td><td>CI の権限</td></tr>
+<tr><td>plan ロールの読み取り範囲</td><td>同一リポジトリの PR から state と SSM SecureString を読める。PR を出せる人を限定する</td><td>CI の権限</td></tr>
+<tr><td>prod 承認時に plan が見えない</td><td>承認がジョブ開始時に求められる。plan ジョブと apply ジョブの分離を検討</td><td>deploy.yml</td></tr>
+<tr><td>SES の受信ルールセット</td><td>有効なルールセットはアカウント・リージョンごとに 1 つ。dev / prod を同一アカウントに置く場合の持ち方</td><td>mail モジュール</td></tr>
+<tr><td>GitHub の required reviewers</td><td>非公開リポジトリでは有料プランが必要</td><td>prod の保護設定</td></tr>
 </table>
 </section>
 

@@ -23,7 +23,8 @@
 | Lambda inbound | 受信メールバケットの `s3:GetObject`、DynamoDB テーブルの読み書き、`ses:SendEmail` |
 | SES（受信ルール） | 受信メールバケットへの `s3:PutObject`、Lambda inbound の `lambda:InvokeFunction` |
 | CloudFront | SPA バケットへの `s3:GetObject`（OAC） |
-| GitHub Actions | デプロイ用ロールを OIDC で引き受け |
+| GitHub Actions（deploy ロール） | Environment dev / prod のジョブが OIDC で引き受け。PowerUserAccess + `contact-*` の IAM ロール・ポリシー操作と PassRole（`contact-github-*` は拒否） |
+| GitHub Actions（plan ロール） | pull_request のジョブが OIDC で引き受け。ReadOnlyAccess + state の読み取り + SSM 経由の `kms:Decrypt` |
 
 ## 監視・ログ
 
@@ -48,6 +49,7 @@
 
 | 順 | 内容 | 完了の目安 |
 |---|---|---|
+| 0 | bootstrap と CI/CD の雛形（済み）: state バケット、OIDC ロール、ワークフロー 4 本、Makefile | PR で plan、main で dev へのデプロイが走る |
 | 1 | Terraform で基盤を作る: DynamoDB、Cognito、S3 + CloudFront、API Gateway + Lambda api の疎通 | `GET /api/admin/me` が認証付きで返る |
 | 2 | Go: store 層、種別 API、公開の受付 API、Turnstile、採番、重複排除 | HP 相当のフォームから登録でき、受付番号が返る |
 | 3 | SES 送信: 自動返信とスタッフ通知 | 受付時にメールが 2 通届く |
@@ -69,3 +71,8 @@
 | WAF | レートルールの最小閾値と月額。スロットリングのみで代替するか | 公開 API の保護とコスト |
 | 受信メール原本の保持期間 | S3 ライフサイクルの日数 | 個人情報の保持方針 |
 | 認証を Cognito にしてよいか | 自前実装（bcrypt + JWT）も可能だが、Cognito の方が実装量が少ない | 認証基盤全体 |
+| deploy ロールの権限 | PowerUserAccess + `contact-*` の IAM 操作で実質管理者に近い。Permissions Boundary の導入を検討 | CI の権限 |
+| plan ロールの読み取り範囲 | 同一リポジトリの PR から state と SSM SecureString を読める。PR を出せる人を限定する | CI の権限 |
+| prod 承認時に plan が見えない | 承認がジョブ開始時に求められる。plan ジョブと apply ジョブの分離を検討 | deploy.yml |
+| SES の受信ルールセット | 有効なルールセットはアカウント・リージョンごとに 1 つ。dev / prod を同一アカウントに置く場合の持ち方 | mail モジュール |
+| GitHub の required reviewers | 非公開リポジトリでは有料プランが必要 | prod の保護設定 |
