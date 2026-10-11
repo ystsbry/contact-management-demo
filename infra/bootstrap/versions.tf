@@ -8,15 +8,14 @@ terraform {
     }
   }
 
-  # 初回はローカル state で apply する（state バケット自体をここで作るため）。
-  # apply 後に state をバケットへ移す場合は、bucket を outputs の state_bucket_name に
-  # 置き換えてコメントを外し、`terraform init -migrate-state` を実行する（README 参照）。
-  #
-  # backend "s3" {
-  #   bucket       = "contact-tfstate-<ACCOUNT_ID>"
-  #   key          = "bootstrap/terraform.tfstate"
-  #   region       = "ap-northeast-1"
-  #   use_lockfile = true
-  #   encrypt      = true
-  # }
+  # state はこの bootstrap 自身が作った S3 バケットに置く。
+  # 初回（バケット作成前）はこのブロックをコメントアウトしてローカル state で apply し、
+  # 作成後に `terraform init -migrate-state` でバケットへ移した（README 参照）。
+  backend "s3" {
+    bucket       = "contact-tfstate-423563856220"
+    key          = "bootstrap/terraform.tfstate"
+    region       = "ap-northeast-1"
+    use_lockfile = true
+    encrypt      = true
+  }
 }

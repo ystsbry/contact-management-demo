@@ -97,6 +97,12 @@ make clean          # dist/ を削除
 
 前提: AWS の管理者権限を持つ認証情報、Terraform 1.11 以上（CI と揃えるなら 1.13 系）、AWS CLI。
 
+### このアカウント固有の前提
+
+- AWS アカウント 423563856220 は、管理アカウント 686194638970 の組織配下にある。組織には `AdvancedModeRegionRestrictionSecurityControlPolicy` が付いていて、許可リージョン以外の操作を拒否する。`RegionFloor` の許可リストに `ap-northeast-1` を追加済み（2026-10-11）。別のリージョンを使う場合は同じリストに追加する。`UsEast1Partitional` の条件は `us-east-1` だけのままにすること。
+- ローカルの AWS 操作はすべて `aws-vault exec contact-admin -- ...` 経由で行う（IAM ユーザー `contact-admin`、MFA 付き）。
+- bootstrap は 2026-10-11 に apply 済み。state は `contact-tfstate-423563856220` の `bootstrap/terraform.tfstate` にあり、`infra/bootstrap/versions.tf` の backend 設定で参照する。2 回目以降は `terraform init` だけでよく、手順 1 の「ローカル state で apply」は不要。
+
 ### 1. bootstrap を apply する（管理者がローカルで一度だけ）
 
 ```sh
