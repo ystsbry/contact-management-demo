@@ -1,0 +1,57 @@
+name: ci-frontend
+
+on:
+  pull_request:
+    paths:
+      - "frontend/**"
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "24"
+
+defaults:
+  run:
+    shell: bash
+    working-directory: frontend
+
+jobs:
+  build:
+    name: lint / typecheck / test / build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: npm ci
+        run: npm ci
+
+      # package.json に該当スクリプトがなければ何もしない（README の「frontend の npm スクリプト」参照）。
+      - name: lint
+        run: npm run lint --if-present
+
+      - name: typecheck
+        run: npm run typecheck --if-present
+
+      - name: test
+        run: npm run test --if-present
+
+      - name: build
+        run: npm run build

@@ -1,0 +1,229 @@
+name: ci-infra
+
+# Lambda の zip のハッシュが plan に影響するため、backend の変更でも plan する。
+on:
+  pull_request:
+    paths:
+      - "infra/**"
+      - "backend/**"
+      - "Makefile"
+      - ".github/workflows/ci-infra.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  TF_VERSION: "1.13.x"
+  AWS_REGION: ap-northeast-1
+  TF_IN_AUTOMATION: "1"
+  TF_INPUT: "0"
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  detect:
+    name: detect environments
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      envs: ${{ steps.envs.outputs.envs }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          sparse-checkout: infra
+
+      # infra/envs/<env>/*.tf があるディレクトリだけを plan の対象にする。
+      - id: envs
+        run: |
+          shopt -s nullglob
+          envs=$(for dir in infra/envs/*/; do
+            tf_files=("$dir"*.tf)
+            if [ ${#tf_files[@]} -gt 0 ]; then basename "$dir"; fi
+          done | jq -R . | jq -cs .)
+          echo "envs=$envs" >> "$GITHUB_OUTPUT"
+          echo "plan 対象: $envs"
+
+  static:
+    name: fmt / validate (bootstrap)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive -diff infra
+
+      - name: terraform validate (bootstrap)
+        working-directory: infra/bootstrap
+        run: |
+          terraform init -backend=false
+          terraform validate -no-color
+
+  plan:
+    name: plan (${{ matrix.env }})
+    needs: detect
+    if: needs.detect.outputs.envs != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+    strategy:
+      fail-fast: false
+      matrix:
+        env: ${{ fromJSON(needs.detect.outputs.envs) }}
+    env:
+      # fork からの PR では OIDC トークンを取得できないため、validate までにとどめる。
+      SAME_REPO: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+    defaults:
+      run:
+        working-directory: infra/envs/${{ matrix.env }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@v7
+        if: hashFiles('backend/go.mod') != ''
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: Lambda build
+        if: hashFiles('backend/go.mod') != ''
+        working-directory: .
+        run: make lambda-build
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: terraform validate
+        run: |
+          terraform init -backend=false
+          terraform validate -no-color
+
+      - uses: aws-actions/configure-aws-credentials@v6
+        if: env.SAME_REPO == 'true'
+        with:
+          role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }}
+          role-session-name: gha-plan-${{ matrix.env }}-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: terraform init
+        if: env.SAME_REPO == 'true'
+        run: terraform init -reconfigure
+
+      # plan ロールは state に書き込めないため -lock=false で実行する。
+      - name: terraform plan
+        id: plan
+        if: env.SAME_REPO == 'true'
+        env:
+          PLAN_FILE: ${{ runner.temp }}/plan.txt
+        run: |
+          set +e
+          terraform plan -no-color -lock=false -detailed-exitcode -out=tfplan > plan.log 2>&1
+          code=$?
+          set -e
+          cat plan.log
+          case "$code" in
+            0) outcome=no-changes ;;
+            2) outcome=changes ;;
+            *) outcome=failed ;;
+          esac
+          if [ "$outcome" = failed ]; then
+            cp plan.log "$PLAN_FILE"
+          else
+            terraform show -no-color tfplan > "$PLAN_FILE"
+          fi
+          echo "outcome=$outcome" >> "$GITHUB_OUTPUT"
+
+      - name: Comment plan on PR
+        if: steps.plan.outputs.outcome != ''
+        uses: actions/github-script@v9
+        env:
+          TF_ENV: ${{ matrix.env }}
+          PLAN_OUTCOME: ${{ steps.plan.outputs.outcome }}
+          PLAN_FILE: ${{ runner.temp }}/plan.txt
+        with:
+          script: |
+            const fs = require('fs');
+
+            const env = process.env.TF_ENV;
+            const outcome = process.env.PLAN_OUTCOME;
+            const marker = `<!-- ci-infra:terraform-plan:${env} -->`;
+            // コメント本文の上限（65,536 文字）に収める。
+            const maxLength = 60000;
+
+            let plan = fs.readFileSync(process.env.PLAN_FILE, 'utf8').trim();
+            const summary =
+              plan.match(/^(Plan: .*|No changes\..*)$/m)?.[0] ??
+              (outcome === 'failed' ? 'terraform plan に失敗しました' : '');
+            const truncated = plan.length > maxLength;
+            if (truncated) {
+              // 失敗時はエラーが末尾に出るため末尾を、成功時は先頭を残す。
+              plan = outcome === 'failed' ? plan.slice(-maxLength) : plan.slice(0, maxLength);
+            }
+
+            const status = {
+              changes: '🟡 変更あり',
+              'no-changes': '🟢 変更なし',
+              failed: '🔴 失敗',
+            }[outcome];
+            const { owner, repo } = context.repo;
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+            const body = [
+              marker,
+              `### Terraform plan: \`${env}\` ${status}`,
+              '',
+              summary ? `**${summary}**` : '',
+              '',
+              `commit: ${context.payload.pull_request.head.sha} ・ [実行ログ](${runUrl})`,
+              '',
+              `<details${outcome === 'failed' ? ' open' : ''}>`,
+              `<summary>plan の出力${truncated ? '（長いため一部のみ。全文は実行ログを参照）' : ''}</summary>`,
+              '',
+              '```text',
+              plan,
+              '```',
+              '',
+              '</details>',
+            ].join('\n');
+
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number,
+              per_page: 100,
+            });
+            const existing = comments.find(
+              (c) => c.user?.login === 'github-actions[bot]' && c.body?.includes(marker),
+            );
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
+
+      - name: Fail if plan failed
+        if: steps.plan.outputs.outcome == 'failed'
+        run: |
+          echo "::error::terraform plan (${{ matrix.env }}) に失敗しました"
+          exit 1

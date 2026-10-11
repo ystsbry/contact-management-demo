@@ -1,0 +1,184 @@
+name: deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - "infra/envs/**"
+      - "infra/modules/**"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: デプロイ先の環境
+        type: choice
+        options: [dev, prod]
+        default: dev
+        required: true
+
+permissions:
+  contents: read
+
+# 同じ環境へのデプロイは直列にする（実行中のものは止めない）。
+concurrency:
+  group: deploy-${{ inputs.environment || 'dev' }}
+  cancel-in-progress: false
+
+env:
+  TF_VERSION: "1.13.x"
+  NODE_VERSION: "24"
+  AWS_REGION: ap-northeast-1
+  TF_IN_AUTOMATION: "1"
+  TF_INPUT: "0"
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      environment: ${{ steps.target.outputs.environment }}
+      enabled: ${{ steps.target.outputs.enabled }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          sparse-checkout: infra
+
+      - id: target
+        env:
+          INPUT_ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          environment="${INPUT_ENVIRONMENT:-dev}"
+          if [ "$environment" = prod ] && [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "::error::prod へは main ブランチからのみデプロイできます（ref: $GITHUB_REF）"
+            exit 1
+          fi
+          shopt -s nullglob
+          tf_files=(infra/envs/"$environment"/*.tf)
+          if [ ${#tf_files[@]} -gt 0 ]; then
+            enabled=true
+          else
+            enabled=false
+            echo "::notice::infra/envs/$environment がまだないため、デプロイをスキップします"
+          fi
+          echo "environment=$environment" >> "$GITHUB_OUTPUT"
+          echo "enabled=$enabled" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    name: deploy (${{ needs.prepare.outputs.environment }})
+    needs: prepare
+    if: needs.prepare.outputs.enabled == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: ${{ needs.prepare.outputs.environment }}
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      TF_DIR: infra/envs/${{ needs.prepare.outputs.environment }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # 1. Lambda のビルド（Terraform が dist/*.zip を参照する）
+      - uses: actions/setup-go@v7
+        if: hashFiles('backend/go.mod') != ''
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: Lambda build
+        if: hashFiles('backend/go.mod') != ''
+        run: make lambda-build
+
+      # 2. Terraform apply
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          role-session-name: gha-deploy-${{ needs.prepare.outputs.environment }}-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: terraform init
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform init
+
+      - name: terraform plan
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform plan -no-color -out=tfplan
+
+      - name: terraform apply
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform apply -no-color tfplan
+
+      # 3. SPA のビルドと配置に使う値を Terraform output から取り出す（README の「Terraform output の契約」）
+      - name: Read terraform outputs
+        id: tf
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          outputs=$(terraform output -json)
+          for key in spa_bucket_name cloudfront_distribution_id cognito_user_pool_id cognito_client_id; do
+            value=$(jq -r --arg key "$key" '.[$key].value // empty' <<<"$outputs")
+            if [ -z "$value" ]; then
+              echo "::error::Terraform output '$key' がありません"
+              exit 1
+            fi
+            echo "$key=$value" >> "$GITHUB_OUTPUT"
+          done
+
+      # 4. SPA のビルド
+      - uses: actions/setup-node@v7
+        if: hashFiles('frontend/package-lock.json') != ''
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: SPA build
+        if: hashFiles('frontend/package-lock.json') != ''
+        working-directory: frontend
+        env:
+          VITE_COGNITO_USER_POOL_ID: ${{ steps.tf.outputs.cognito_user_pool_id }}
+          VITE_COGNITO_CLIENT_ID: ${{ steps.tf.outputs.cognito_client_id }}
+        run: |
+          npm ci
+          npm run build
+
+      # 5. S3 へ配置。ハッシュ付きの assets/ を先に置き、参照元の index.html を最後に置き換える。
+      #    古い assets/ は、配置前に読み込まれた index.html から参照されうるため削除しない。
+      - name: Upload SPA to S3
+        if: hashFiles('frontend/package-lock.json') != ''
+        working-directory: frontend
+        env:
+          BUCKET: ${{ steps.tf.outputs.spa_bucket_name }}
+        run: |
+          if [ -d dist/assets ]; then
+            aws s3 sync dist/assets "s3://$BUCKET/assets" \
+              --cache-control "public, max-age=31536000, immutable"
+          fi
+          aws s3 sync dist "s3://$BUCKET" --delete \
+            --exclude "assets/*" --exclude "index.html" \
+            --cache-control "no-cache"
+          aws s3 cp dist/index.html "s3://$BUCKET/index.html" \
+            --cache-control "no-cache"
+
+      # 6. CloudFront のキャッシュ無効化
+      - name: Invalidate CloudFront cache
+        if: hashFiles('frontend/package-lock.json') != ''
+        env:
+          DISTRIBUTION_ID: ${{ steps.tf.outputs.cloudfront_distribution_id }}
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id "$DISTRIBUTION_ID" \
+            --paths "/*" \
+            --query 'Invalidation.Id' --output text

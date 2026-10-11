@@ -1,0 +1,44 @@
+# Terraform
+# .terraform.lock.hcl はプロバイダのバージョン固定のためコミットする
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+plan.log
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# Go / Lambda のビルド成果物（make lambda-build）
+/dist/
+*.test
+*.out
+coverage/
+
+# Node
+node_modules/
+frontend/dist/
+*.tsbuildinfo
+npm-debug.log*
+
+# 環境変数ファイル（.env.example のみコミットする）
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+
+# エディタ
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*~
